@@ -123,7 +123,7 @@ class ElectricalWorkApp:
     # Opciones de acabado. Por defecto, el aspecto aprobado; se pueden
     # activar para vista previa con la variable EW_ESTILO="rejilla,resaltado,
     # pinzas,cruceta" (o "todo").
-    _ESTILO_DEFECTO=()
+    _ESTILO_DEFECTO=('rejilla',)  # aprobado por el usuario: solo la opción A
 
     def _read_style(self):
         names=('rejilla','resaltado','pinzas','cruceta')

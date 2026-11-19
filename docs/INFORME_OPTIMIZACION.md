@@ -168,7 +168,14 @@ Total: 23 pruebas correctas.
 - Iconos de herramientas suavizados (`quality_render.IconPainter`), también escalados en modo DPI.
 - Cabecera y barra de edición en Segoe UI Semibold.
 
-## 6. Propuestas NO implementadas (requieren autorización)
+## 6. Acabado estilo AutoCAD Electrical
+
+Referencia elegida por el usuario: AutoCAD Electrical. Se prepararon cuatro opciones con vista previa
+(`docs/opciones_acabado/`). **Aprobada y activada: A, rejilla con puntos principales** cada 100
+unidades. B (resaltado al pasar el ratón), C (pinzamientos) y D (cruceta) quedan desactivadas; se
+pueden probar con la variable de entorno `EW_ESTILO` (por ejemplo `EW_ESTILO=rejilla,pinzas`).
+
+## 7. Propuestas NO implementadas (requieren autorización)
 
 1. **Nitidez en pantallas con escalado de Windows (125 %, 150 %).** Python para Windows no se
    declara «DPI aware» y Windows amplía la ventana como imagen: todo (botones, textos y dibujo) se

@@ -45,6 +45,12 @@ REVISIÓN 3: NITIDEZ Y ACABADO
 - Cabecera y barra de edición en Segoe UI Semibold (más fina que la negrita;
   mismos tamaños y colores). Si falta en el equipo, se usa la negrita.
 
+ACABADO ESTILO AUTOCAD ELECTRICAL (aprobado: solo opción A)
+- Rejilla con punto principal cada 100 unidades (cada 5 puntos), más marcado,
+  para alinear y medir de un vistazo. Mismo color de rejilla, algo más oscuro.
+- Las opciones B (resaltado), C (pinzamientos) y D (cruceta) quedan
+  desactivadas en el código por si se quieren en el futuro.
+
 CORRECCIÓN
 - Enmarcar: dos recuadros seguidos rápidamente ya no se pierden (la segunda
   pulsación se tomaba como doble clic).
