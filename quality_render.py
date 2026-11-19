@@ -350,3 +350,106 @@ def to_tk(bitmap):
     if not AVAILABLE:
         return None
     return ImageTk.PhotoImage(bitmap)
+
+
+# --- Iconos de la interfaz suavizados ---------------------------------------
+
+class IconPainter:
+    """Imita las llamadas ``create_*`` del Canvas de Tk usadas en los iconos,
+    pero dibuja con suavizado (sobremuestreo 4x). Mismas formas, coordenadas
+    y colores que el dibujo original; solo mejora la definición."""
+
+    def __init__(self, width, height, bg):
+        self.w, self.h = int(width), int(height)
+        self.image = Image.new('RGBA', (self.w * SS, self.h * SS), (*_color(bg), 255))
+        self.draw = ImageDraw.Draw(self.image)
+        self.texts = []
+
+    @staticmethod
+    def _flat(points):
+        if len(points) == 1 and isinstance(points[0], (list, tuple)):
+            points = points[0]
+        flat = []
+        for p in points:
+            if isinstance(p, (list, tuple)):
+                flat.extend(p)
+            else:
+                flat.append(p)
+        return [(flat[i] * SS, flat[i + 1] * SS) for i in range(0, len(flat) - 1, 2)]
+
+    def _cap(self, p, width, ink):
+        r = width * SS / 2
+        self.draw.ellipse((p[0] - r, p[1] - r, p[0] + r, p[1] + r), fill=ink)
+
+    def create_line(self, *points, fill='black', width=1, capstyle='butt', joinstyle='miter',
+                    dash=None, **_):
+        pts = [(x / SS, y / SS) for x, y in self._flat(points)]
+        ink = (*_color(fill), 255)
+        # Grosor entero y tramos horizontales/verticales alineados al píxel:
+        # trazo nítido (sin la franja gris de 2 px de un grosor 1,45 suavizado).
+        w = max(1, int(round(float(width))))
+        if dash:
+            on, off = (dash[0], dash[1]) if len(dash) > 1 else (dash[0], dash[0])
+            for a, b in zip(pts, pts[1:]):
+                _dashed(self.draw, (a[0] * SS, a[1] * SS), (b[0] * SS, b[1] * SS),
+                        ink, w * SS, on * SS, off * SS)
+            return
+        half = w * SS / 2
+        for a, b in zip(pts, pts[1:]):
+            if abs(a[0] - b[0]) < 1e-6 or abs(a[1] - b[1]) < 1e-6:
+                x1, x2 = sorted((a[0], b[0]))
+                y1, y2 = sorted((a[1], b[1]))
+                if abs(a[0] - b[0]) < 1e-6:
+                    x1 = x2 = align(a[0], w)
+                else:
+                    y1 = y2 = align(a[1], w)
+                ext = half if capstyle != 'butt' or len(pts) > 2 else 0
+                self.draw.rectangle((round(x1 * SS - half - (ext if y1 == y2 else 0)),
+                                     round(y1 * SS - half - (ext if x1 == x2 else 0)),
+                                     round(x2 * SS + half + (ext if y1 == y2 else 0)) - 1,
+                                     round(y2 * SS + half + (ext if x1 == x2 else 0)) - 1), fill=ink)
+            else:
+                A = (a[0] * SS - .5, a[1] * SS - .5)
+                B = (b[0] * SS - .5, b[1] * SS - .5)
+                self.draw.line((A, B), fill=ink, width=w * SS)
+                if capstyle == 'round' or joinstyle == 'round':
+                    for p in (A, B):
+                        self._cap(p, w, ink)
+
+    def create_rectangle(self, x1, y1, x2, y2, fill='', outline='black', width=1, **_):
+        pts = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+        if fill:
+            self.draw.polygon([(x * SS, y * SS) for x, y in pts], fill=(*_color(fill), 255))
+        if outline:
+            self.create_line(*pts, pts[0], fill=outline, width=width, capstyle='projecting')
+
+    def create_oval(self, x1, y1, x2, y2, fill='', outline='black', width=1, **_):
+        half = max(1, int(round(float(width)))) * SS / 2 if outline else 0
+        box = (x1 * SS - half, y1 * SS - half, x2 * SS + half, y2 * SS + half)
+        self.draw.ellipse(box, fill=(*_color(fill), 255) if fill else None,
+                          outline=(*_color(outline), 255) if outline else None,
+                          width=max(1, round(2 * half)) if outline else 0)
+
+    def create_polygon(self, *points, fill='black', outline='', width=1, **_):
+        pts = self._flat(points)
+        if fill:
+            self.draw.polygon(pts, fill=(*_color(fill), 255))
+        if outline:
+            self.create_line(*[(x / SS, y / SS) for x, y in pts + pts[:1]],
+                             fill=outline, width=width, joinstyle='round')
+
+    def create_text(self, x, y, text='', fill='black', font=None, anchor='center', **_):
+        self.texts.append((x, y, text, fill, font, anchor))
+
+    def photo(self, master=None):
+        img = self.image.reduce(SS)
+        if self.texts:
+            draw = ImageDraw.Draw(img)
+            anchors = {'center': 'mm', 'w': 'lm', 'e': 'rm', 'n': 'mt', 's': 'mb'}
+            for x, y, text, fill, font, anchor in self.texts:
+                family, size, *style = font if font else ('Segoe UI', 9)
+                px = abs(size) * 96 / 72 if size > 0 else abs(size)
+                draw.text((x, y), str(text), fill=(*_color(fill), 255),
+                          font=_font(px, family, 'bold' in style),
+                          anchor=anchors.get(anchor, 'mm'))
+        return ImageTk.PhotoImage(img, master=master)

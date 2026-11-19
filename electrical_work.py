@@ -73,6 +73,8 @@ class ElectricalWorkApp:
         self._grid_region=None
         self._shape_cache={}
         self._right=None
+        self._icon_photos={}
+        self._semibold=None
         self._fast_zoom=False
         self._pending_quality=set()
         self._refine_job=None
@@ -110,6 +112,14 @@ class ElectricalWorkApp:
         self._bind_keys()
         self._set_tool('select')
         root.after(60,self.redraw)
+
+    def _semi(self,size):
+        """Seminegrita (Segoe UI Semibold): trazo más fino y nítido que la
+        negrita, mismo tamaño. Si el sistema no la tiene, negrita original."""
+        if self._semibold is None:
+            fams={f.lower() for f in tkfont.families(self.root)}
+            self._semibold=(sys.platform!='win32' or 'segoe ui semibold' in fams)
+        return ('Segoe UI Semibold',size) if self._semibold else (FONT,size,'bold')
 
     def _btn(self,parent,text,command,bg=NAVY2,fg='#eaf6fc',padx=15,pady=10,**kw):
         return tk.Button(parent,text=text,command=command,font=(FONT,10,'bold'),
@@ -384,26 +394,32 @@ class ElectricalWorkApp:
             fg='#067b78' if selected else '#30495b'
             cv.configure(bg=bg,highlightbackground='#9dd3ca' if selected else bg)
             cv.delete('all')
+            # Mismas formas y colores, dibujadas con suavizado cuando hay Pillow.
+            target=cv
+            if quality_render.AVAILABLE:
+                ht=int(cv.cget('highlightthickness'))
+                target=quality_render.IconPainter(int(cv.cget('width'))+2*ht,
+                                                  int(cv.cget('height'))+2*ht,bg)
             def line(*points,width=1.45,dash=None):
                 opts={'fill':fg,'width':width,'capstyle':'round','joinstyle':'round'}
                 if dash:opts['dash']=dash
-                cv.create_line(*points,**opts)
+                target.create_line(*points,**opts)
             def rect(x1,y1,x2,y2,width=1.45):
-                cv.create_rectangle(x1,y1,x2,y2,fill=bg,outline=fg,width=width)
+                target.create_rectangle(x1,y1,x2,y2,fill=bg,outline=fg,width=width)
             def ring(x,y,r=2.0):
-                cv.create_oval(x-r,y-r,x+r,y+r,fill=bg,outline=fg,width=1.25)
+                target.create_oval(x-r,y-r,x+r,y+r,fill=bg,outline=fg,width=1.25)
             if tool=='select':
-                cv.create_polygon(10,6,12,26,17,21,20,28,23,27,20,19,26,18,
+                target.create_polygon(10,6,12,26,17,21,20,28,23,27,20,19,26,18,
                                   fill=fg,outline=fg)
             elif tool in ('wire','wire_group'):
                 line(8,26,8,9,28,9)
                 ring(8,26,1.6);ring(28,9,1.6)
                 if tool=='wire_group':
-                    cv.create_polygon(29,24,33,26.5,29,29,fill=fg,outline=fg)
+                    target.create_polygon(29,24,33,26.5,29,29,fill=fg,outline=fg)
             elif tool=='select_box':
                 rect(8,9,27,26,width=1.3)
-                cv.create_rectangle(11,12,17,18,outline=fg,fill=bg,width=1)
-                cv.create_line(7,7,11,7,fill=fg,dash=(2,2))
+                target.create_rectangle(11,12,17,18,outline=fg,fill=bg,width=1)
+                target.create_line(7,7,11,7,fill=fg,dash=(2,2))
             elif tool=='wire_straight':
                 line(7,26,28,7)
                 ring(7,26,1.8);ring(28,7,1.8)
@@ -411,23 +427,27 @@ class ElectricalWorkApp:
                 rect(9,8,27,26)
                 ring(9,8,1.5);ring(27,26,1.5)
             elif tool=='plc_module':
-                cv.create_rectangle(8,5,28,28,outline=fg,width=1.25)
-                cv.create_text(18,16,text='PLC',fill=fg,font=(FONT,7,'bold'))
+                target.create_rectangle(8,5,28,28,outline=fg,width=1.25)
+                target.create_text(18,16,text='PLC',fill=fg,font=(FONT,7,'bold'))
                 for yy in (11,18,25):
                     line(5,yy,8,yy);line(28,yy,31,yy)
             elif tool in SYMBOL_NAMES or tool in self._groups:
                 # Un único motor de formas para plano, SVG y todas las miniaturas.
                 # Evita que los iconos con dibujos antiguos no coincidan con
                 # la simbología realmente colocada en el esquema.
-                self._paint_symbol_preview(cv,self._group_icon.get(tool,tool),fg,bg)
+                self._paint_symbol_preview(target,self._group_icon.get(tool,tool),fg,bg)
                 if tool in self._groups:
-                    cv.create_polygon(29,24,33,26.5,29,29,fill=fg,outline=fg)
+                    target.create_polygon(29,24,33,26.5,29,29,fill=fg,outline=fg)
             elif tool=='text':
-                cv.create_text(18,16,text='A',font=(FONT,18,'bold'),fill=fg)
+                target.create_text(18,16,text='A',font=(FONT,18,'bold'),fill=fg)
             else:
-                self._paint_symbol_preview(cv,self._group_icon.get(tool,tool),fg,bg)
+                self._paint_symbol_preview(target,self._group_icon.get(tool,tool),fg,bg)
                 if tool in self._groups:
-                    cv.create_polygon(29,24,33,26.5,29,29,fill=fg,outline=fg)
+                    target.create_polygon(29,24,33,26.5,29,29,fill=fg,outline=fg)
+            if target is not cv:
+                photo=target.photo(master=self.root)
+                self._icon_photos[tool]=photo
+                cv.create_image(0,0,anchor='nw',image=photo)
 
     def _paint_symbol_preview(self,canvas,kind,fg,bg):
         # Miniatura CAD generada desde la misma geometría del plano.
@@ -467,7 +487,7 @@ class ElectricalWorkApp:
                  width=3,height=2).pack(side='left',pady=8)
         titlebox=tk.Frame(brand,bg=NAVY)
         titlebox.pack(side='left',padx=10,pady=7)
-        self._text(titlebox,'ELECTRICAL WORK',12,'bold','#ffffff').pack(anchor='w')
+        tk.Label(titlebox,text='ELECTRICAL WORK',font=self._semi(12),fg='#ffffff',bg=NAVY).pack(anchor='w')
         self._text(titlebox,'EDITOR DE ESQUEMAS · COMPACTO 70 % · V0.5.4 OPT',8,'normal','#9db2c5').pack(anchor='w')
         actions=tk.Frame(top,bg=NAVY)
         actions.pack(side='right',padx=(0,12),pady=9)
@@ -477,7 +497,7 @@ class ElectricalWorkApp:
             ('Exportar PDF',self.export_pdf_dialog,NAVY2),
             ('Salir',self.on_close,NAVY2)]:
             btn=self._btn(actions,name,command,bg=bg,padx=10,pady=6)
-            btn.config(font=(FONT,9,'bold'))
+            btn.config(font=self._semi(9))
             btn.pack(side='left',padx=3)
 
         base=tk.Frame(self.root,bg=BG)
@@ -498,7 +518,7 @@ class ElectricalWorkApp:
         left.pack(side='left',fill='y',padx=(10,0))
         def action(name,callback,description,attr=None,bg='#edf3f7',fg=INK):
             btn=self._btn(left,name,callback,bg=bg,fg=fg,padx=9,pady=5)
-            btn.configure(font=(FONT,9,'bold'))
+            btn.configure(font=self._semi(9))
             btn.pack(side='left',padx=2,pady=7)
             self._bind_tip(btn,description)
             if attr:setattr(self,attr,btn)
@@ -526,7 +546,7 @@ class ElectricalWorkApp:
         sheets_bar.pack(side='left',fill='y',padx=(4,0))
         def sheet_button(label,func,bg='#edf3f7'):
             b=self._btn(sheets_bar,label,func,bg=bg,fg=INK,padx=4,pady=5)
-            b.configure(font=(FONT,8,'bold'))
+            b.configure(font=self._semi(8))
             b.pack(side='left',padx=1,pady=7)
             return b
         self.sheet_prev_button=sheet_button('◀',lambda:self.switch_sheet(self.sheet_index-1))
@@ -543,7 +563,7 @@ class ElectricalWorkApp:
         self.sheet_rename_button=sheet_button('Nombre',self.rename_sheet)
         self.sheet_project_button=sheet_button('Proyecto',self.rename_project)
         self.sheet_menu_button=tk.Menubutton(sheets_bar,text='Hojas ▾',bg='#edf3f7',
-                     fg=INK,font=(FONT,8,'bold'),relief='flat',padx=5,pady=5,
+                     fg=INK,font=self._semi(8),relief='flat',padx=5,pady=5,
                      activebackground='#d9eaf0',cursor='hand2')
         self.sheet_menu=tk.Menu(self.sheet_menu_button,tearoff=False)
         for text,callback in (('+ Añadir hoja',self.add_sheet),
@@ -562,20 +582,20 @@ class ElectricalWorkApp:
         zoom_controls.pack(side='right',fill='y',padx=(2,12))
         zoom_out=self._btn(zoom_controls,'−',lambda:self.set_zoom(self.zoom_percent-10),
                             bg='#edf3f7',fg=INK,padx=9,pady=5)
-        zoom_out.configure(font=(FONT,11,'bold'))
+        zoom_out.configure(font=self._semi(11))
         zoom_out.pack(side='left',pady=7)
         self._bind_tip(zoom_out,'Reducir zoom en 10 puntos porcentuales')
         self.zoom_entry=tk.Entry(zoom_controls,textvariable=self._zoom_var,width=5,
-            justify='center',font=(FONT,10,'bold'),fg=INK,bg='white',
+            justify='center',font=self._semi(10),fg=INK,bg='white',
             relief='solid',bd=1,highlightthickness=1,highlightbackground=BORDER)
         self.zoom_entry.pack(side='left',padx=(7,2),ipady=5)
         self.zoom_entry.bind('<Return>',self.apply_zoom_entry)
         self.zoom_entry.bind('<KP_Enter>',self.apply_zoom_entry)
         self.zoom_entry.bind('<FocusOut>',self.apply_zoom_entry)
-        self._text(zoom_controls,'%',9,'bold',INK).pack(side='left',padx=(0,7))
+        tk.Label(zoom_controls,text='%',font=self._semi(9),fg=INK,bg='#f8fbfd').pack(side='left',padx=(0,7))
         zoom_in=self._btn(zoom_controls,'+',lambda:self.set_zoom(self.zoom_percent+10),
                            bg='#edf3f7',fg=INK,padx=9,pady=5)
-        zoom_in.configure(font=(FONT,11,'bold'))
+        zoom_in.configure(font=self._semi(11))
         zoom_in.pack(side='left',pady=7)
         self._bind_tip(zoom_in,'Aumentar zoom en 10 puntos porcentuales')
         self._bind_tip(self.zoom_entry,'Indica el porcentaje exacto y pulsa Intro. 100 % = hoja entera')

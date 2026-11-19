@@ -13,7 +13,7 @@ def paper_height(width=1280):
     return width*A4_HEIGHT_MM/A4_WIDTH_MM
 
 def guide_geometry(width=1280):
-    """Geometría de doble marco y zonas A-H, 1-6, en coordenadas del plano.
+    """Geometría de doble marco y zonas A-H, 1-8, en coordenadas del plano.
 
     Los labels son marcas de localización de zonas, no enlaces entre hojas.
     """
@@ -29,16 +29,16 @@ def guide_geometry(width=1280):
         x=xo+(xr-xo)*i/8
         strokes.append((x,yo,x,yi))
         strokes.append((x,ye,x,yb))
-    for i in range(1,6):
-        y=yi+(ye-yi)*i/6
+    for i in range(1,8):
+        y=yi+(ye-yi)*i/8
         strokes.append((xo,y,xi,y))
         strokes.append((xe,y,xr,y))
     labels=[]
     for i,letter in enumerate('ABCDEFGH'):
         x=xo+(xr-xo)*(i+0.5)/8
         labels.extend(((x,(yo+yi)/2,letter),(x,(ye+yb)/2,letter)))
-    for i in range(6):
-        y=yi+(ye-yi)*(i+0.5)/6
+    for i in range(8):
+        y=yi+(ye-yi)*(i+0.5)/8
         labels.extend((((xo+xi)/2,y,str(i+1)),((xe+xr)/2,y,str(i+1))))
     return { 'paper':(width,height), 'outer':outside, 'inner':inside,
              'lines':strokes,'labels':labels }
