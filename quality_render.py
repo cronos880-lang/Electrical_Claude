@@ -359,14 +359,16 @@ class IconPainter:
     pero dibuja con suavizado (sobremuestreo 4x). Mismas formas, coordenadas
     y colores que el dibujo original; solo mejora la definición."""
 
-    def __init__(self, width, height, bg):
+    def __init__(self, width, height, bg, scale=1.0):
+        # ``scale``: factor de pantalla (modo DPI). Las coordenadas y grosores
+        # de los iconos se dan en unidades lógicas y se multiplican aquí.
+        self.k = float(scale)
         self.w, self.h = int(width), int(height)
         self.image = Image.new('RGBA', (self.w * SS, self.h * SS), (*_color(bg), 255))
         self.draw = ImageDraw.Draw(self.image)
         self.texts = []
 
-    @staticmethod
-    def _flat(points):
+    def _flat(self, points):
         if len(points) == 1 and isinstance(points[0], (list, tuple)):
             points = points[0]
         flat = []
@@ -375,7 +377,8 @@ class IconPainter:
                 flat.extend(p)
             else:
                 flat.append(p)
-        return [(flat[i] * SS, flat[i + 1] * SS) for i in range(0, len(flat) - 1, 2)]
+        k = self.k * SS
+        return [(flat[i] * k, flat[i + 1] * k) for i in range(0, len(flat) - 1, 2)]
 
     def _cap(self, p, width, ink):
         r = width * SS / 2
@@ -387,12 +390,12 @@ class IconPainter:
         ink = (*_color(fill), 255)
         # Grosor entero y tramos horizontales/verticales alineados al píxel:
         # trazo nítido (sin la franja gris de 2 px de un grosor 1,45 suavizado).
-        w = max(1, int(round(float(width))))
+        w = max(1, int(round(float(width) * self.k)))
         if dash:
             on, off = (dash[0], dash[1]) if len(dash) > 1 else (dash[0], dash[0])
             for a, b in zip(pts, pts[1:]):
                 _dashed(self.draw, (a[0] * SS, a[1] * SS), (b[0] * SS, b[1] * SS),
-                        ink, w * SS, on * SS, off * SS)
+                        ink, w * SS, on * SS * self.k, off * SS * self.k)
             return
         half = w * SS / 2
         for a, b in zip(pts, pts[1:]):
@@ -419,13 +422,15 @@ class IconPainter:
     def create_rectangle(self, x1, y1, x2, y2, fill='', outline='black', width=1, **_):
         pts = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
         if fill:
-            self.draw.polygon([(x * SS, y * SS) for x, y in pts], fill=(*_color(fill), 255))
+            k = self.k * SS
+            self.draw.polygon([(x * k, y * k) for x, y in pts], fill=(*_color(fill), 255))
         if outline:
             self.create_line(*pts, pts[0], fill=outline, width=width, capstyle='projecting')
 
     def create_oval(self, x1, y1, x2, y2, fill='', outline='black', width=1, **_):
-        half = max(1, int(round(float(width)))) * SS / 2 if outline else 0
-        box = (x1 * SS - half, y1 * SS - half, x2 * SS + half, y2 * SS + half)
+        half = max(1, int(round(float(width) * self.k))) * SS / 2 if outline else 0
+        k = self.k * SS
+        box = (x1 * k - half, y1 * k - half, x2 * k + half, y2 * k + half)
         self.draw.ellipse(box, fill=(*_color(fill), 255) if fill else None,
                           outline=(*_color(outline), 255) if outline else None,
                           width=max(1, round(2 * half)) if outline else 0)
@@ -435,7 +440,8 @@ class IconPainter:
         if fill:
             self.draw.polygon(pts, fill=(*_color(fill), 255))
         if outline:
-            self.create_line(*[(x / SS, y / SS) for x, y in pts + pts[:1]],
+            k = self.k * SS
+            self.create_line(*[(x / k, y / k) for x, y in pts + pts[:1]],
                              fill=outline, width=width, joinstyle='round')
 
     def create_text(self, x, y, text='', fill='black', font=None, anchor='center', **_):
@@ -448,8 +454,8 @@ class IconPainter:
             anchors = {'center': 'mm', 'w': 'lm', 'e': 'rm', 'n': 'mt', 's': 'mb'}
             for x, y, text, fill, font, anchor in self.texts:
                 family, size, *style = font if font else ('Segoe UI', 9)
-                px = abs(size) * 96 / 72 if size > 0 else abs(size)
-                draw.text((x, y), str(text), fill=(*_color(fill), 255),
+                px = (abs(size) * 96 / 72 if size > 0 else abs(size)) * self.k
+                draw.text((x * self.k, y * self.k), str(text), fill=(*_color(fill), 255),
                           font=_font(px, family, 'bold' in style),
                           anchor=anchors.get(anchor, 'mm'))
         return ImageTk.PhotoImage(img, master=master)

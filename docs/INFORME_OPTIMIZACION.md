@@ -155,7 +155,20 @@ cable cruzado, deseleccionar, mover grupo marcado, marcar con zoom sin desplazar
 el derecho, borrar con el derecho y deshacer, no borrar sin selección, cancelar trazo).
 Total: 23 pruebas correctas.
 
-## 5. Propuestas NO implementadas (requieren autorización)
+## 5. Revisión 3: nitidez y acabado
+
+- **Modo DPI** (`dpi_ui.py`). Pantalla del usuario: 1920×1080 al 150 %. Sin el modo DPI, Windows
+  dibujaba la ventana a 1280×720 y la ampliaba ×1,5 (imagen borrosa). Ahora el proceso se declara
+  compatible con DPI antes de crear la ventana; las fuentes en puntos se adaptan solas y las medidas
+  de interfaz en píxeles (márgenes, bordes, alturas, iconos) se multiplican por el factor de escala,
+  de modo que la interfaz conserva su tamaño visual. Los textos del plano se fijan en píxeles para que
+  no crezcan dos veces. Tolerancias del ratón escaladas. Desactivable con `SIN_DPI.txt`.
+  Comparación simulada en `docs/vista_previa_modo_DPI.png`. 23 pruebas correctas a 96 y 144 ppp.
+- Marco con zonas 1–8 (`page_layout.py`), compartido por pantalla, PDF y SVG.
+- Iconos de herramientas suavizados (`quality_render.IconPainter`), también escalados en modo DPI.
+- Cabecera y barra de edición en Segoe UI Semibold.
+
+## 6. Propuestas NO implementadas (requieren autorización)
 
 1. **Nitidez en pantallas con escalado de Windows (125 %, 150 %).** Python para Windows no se
    declara «DPI aware» y Windows amplía la ventana como imagen: todo (botones, textos y dibujo) se

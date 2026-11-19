@@ -33,6 +33,18 @@ NUEVO MANEJO DEL RATÓN (pedido por el usuario, revisión 2)
   Sin selección: menú de etiquetas o cancelar el trazo, como antes.
 - Se retira «Enmarcar» del desplegable de Líneas (ya lo hace el Puntero).
 
+REVISIÓN 3: NITIDEZ Y ACABADO
+- Modo DPI: en pantallas con escalado de Windows (p. ej. 1920x1080 al 150 %)
+  el programa usa los píxeles reales en vez de dejar que Windows amplíe la
+  ventana como una imagen. Todo (textos, iconos, esquema) se ve nítido y con
+  la misma proporción. Desactivable: crear SIN_DPI.txt junto al programa.
+- Marco de la hoja: zonas 1-8 en los laterales (antes 1-6); letras A-H igual.
+  Igual en pantalla, PDF y SVG.
+- Iconos de la barra de herramientas suavizados y alineados al píxel
+  (mismas formas y colores).
+- Cabecera y barra de edición en Segoe UI Semibold (más fina que la negrita;
+  mismos tamaños y colores). Si falta en el equipo, se usa la negrita.
+
 CORRECCIÓN
 - Enmarcar: dos recuadros seguidos rápidamente ya no se pierden (la segunda
   pulsación se tomaba como doble clic).

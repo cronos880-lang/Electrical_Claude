@@ -14,6 +14,8 @@ import tkinter as tk
 from tkinter import ttk
 from collections import OrderedDict
 import quality_render
+import dpi_ui
+from dpi_ui import px as _px
 from page_layout import paper_height,guide_geometry,GREEN,title_block_geometry
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog
@@ -100,8 +102,10 @@ class ElectricalWorkApp:
         self._selection_var=tk.StringVar(value='Sin selección')
         root.title('Electrical Work · COMPACTO V0.5.4 OPT')
         root.configure(bg=BG)
-        root.geometry('1450x900')
-        root.minsize(980,600)
+        dpi_ui.instalar(root)
+        self._s=dpi_ui.ESCALA
+        root.geometry(f'{_px(1450)}x{_px(900)}')
+        root.minsize(_px(980),_px(600))
         try:
             if sys.platform=='win32': root.state('zoomed')
             elif root.tk.call('tk','windowingsystem')=='x11': root.attributes('-zoomed',True)
@@ -112,6 +116,11 @@ class ElectricalWorkApp:
         self._bind_keys()
         self._set_tool('select')
         root.after(60,self.redraw)
+
+    def _sheet_px(self,points):
+        """Tamaño de letra del plano en píxeles (negativo para Tk): mismo
+        aspecto con o sin modo DPI, porque el plano ya escala con el zoom."""
+        return -max(1,round(points*4/3*self._s))
 
     def _semi(self,size):
         """Seminegrita (Segoe UI Semibold): trazo más fino y nítido que la
@@ -399,7 +408,8 @@ class ElectricalWorkApp:
             if quality_render.AVAILABLE:
                 ht=int(cv.cget('highlightthickness'))
                 target=quality_render.IconPainter(int(cv.cget('width'))+2*ht,
-                                                  int(cv.cget('height'))+2*ht,bg)
+                                                  int(cv.cget('height'))+2*ht,bg,
+                                                  scale=self._s)
             def line(*points,width=1.45,dash=None):
                 opts={'fill':fg,'width':width,'capstyle':'round','joinstyle':'round'}
                 if dash:opts['dash']=dash
@@ -444,6 +454,8 @@ class ElectricalWorkApp:
                 self._paint_symbol_preview(target,self._group_icon.get(tool,tool),fg,bg)
                 if tool in self._groups:
                     target.create_polygon(29,24,33,26.5,29,29,fill=fg,outline=fg)
+            if target is cv and self._s!=1.0:
+                cv.scale('all',0,0,self._s,self._s)
             if target is not cv:
                 photo=target.photo(master=self.root)
                 self._icon_photos[tool]=photo
@@ -736,7 +748,7 @@ class ElectricalWorkApp:
 
     def _wire_target(self,x,y):
         # La tolerancia es visible y estable en pantalla incluso con zoom.
-        return wire_connection_target(self.doc,x,y,tolerance=12/self.zoom)
+        return wire_connection_target(self.doc,x,y,tolerance=12*self._s/self.zoom)
 
     def _wire_xy(self,x,y):
         target=self._wire_target(x,y)
@@ -745,7 +757,8 @@ class ElectricalWorkApp:
     def _hit(self,e):
         cx=self.canvas.canvasx(e.x)
         cy=self.canvas.canvasy(e.y)
-        matches=self.canvas.find_overlapping(cx-7,cy-7,cx+7,cy+7)
+        r=7*self._s
+        matches=self.canvas.find_overlapping(cx-r,cy-r,cx+r,cy+r)
         for oid in reversed(matches):
             tags=self.canvas.gettags(oid)
             for tag in tags:
@@ -757,7 +770,7 @@ class ElectricalWorkApp:
         """Detecta exclusivamente el texto, no la zona general del símbolo."""
         cx=self.canvas.canvasx(e.x)
         cy=self.canvas.canvasy(e.y)
-        for oid in reversed(self.canvas.find_overlapping(cx-1,cy-2,cx+1,cy+2)):
+        for oid in reversed(self.canvas.find_overlapping(cx-self._s,cy-2*self._s,cx+self._s,cy+2*self._s)):
             for tag in self.canvas.gettags(oid):
                 if tag.startswith('annotation:'):
                     _,ident,key=tag.split(':',2)
@@ -778,7 +791,7 @@ class ElectricalWorkApp:
     def on_right_drag(self,e):
         r=self._right
         if r is None:return 'break'
-        if not r['moved'] and max(abs(e.x-r['start'][0]),abs(e.y-r['start'][1]))>=self._RIGHT_MOVE:
+        if not r['moved'] and max(abs(e.x-r['start'][0]),abs(e.y-r['start'][1]))>=self._RIGHT_MOVE*self._s:
             r['moved']=True
             self.canvas.configure(cursor='fleur')
         if r['moved'] and self.zoom_percent>100:
@@ -1147,7 +1160,7 @@ class ElectricalWorkApp:
             sx,sy=self.marquee_start
             self.marquee_start=None
             self.marquee_end=None
-            if abs(ex-sx)*self.zoom>=5 and abs(ey-sy)*self.zoom>=5:
+            if abs(ex-sx)*self.zoom>=5*self._s and abs(ey-sy)*self.zoom>=5*self._s:
                 left,right=sorted((sx,ex));top,bottom=sorted((sy,ey))
                 picked=self._objects_in_area(left,top,right,bottom)
                 if len(picked)==1:
@@ -1506,7 +1519,8 @@ class ElectricalWorkApp:
         if sel:
             for a,b in (pts[0],pts[-1]):
                 xp,yp=self._xy(a,b)
-                cv.create_oval(xp-4,yp-4,xp+4,yp+4,fill=TEAL,outline='white',tags=tags)
+                h=4*self._s
+                cv.create_oval(xp-h,yp-h,xp+h,yp+h,fill=TEAL,outline='white',tags=tags)
 
     def _selection_box(self,item):
         xp,yp=self._xy(item['x'],item['y'])
@@ -1662,7 +1676,7 @@ class ElectricalWorkApp:
         elif typ in ('text','textcenter','textend'):
             _,x,y,text,size,fg,*family=shape
             self.canvas.create_text(*self._xy(x,y),text=text,anchor='center' if typ=='textcenter' else 'e' if typ=='textend' else 'w',
-                     fill=fg,font=(family[0] if family else FONT,max(5,round(size*self.zoom))),tags=tags)
+                     fill=fg,font=(family[0] if family else FONT,self._sheet_px(max(5,round(size*self.zoom/self._s)))),tags=tags)
 
     def redraw(self):
         if not hasattr(self,'canvas'):return
@@ -1774,7 +1788,8 @@ class ElectricalWorkApp:
         # una llamada por punto desde Python). Mismo óvalo y mismo color.
         name=str(cv)
         z,ox,oy=self.zoom,self._offset_x,self._offset_y
-        lines=[f'{name} create oval {x*z+ox-.7:.3f} {y*z+oy-.7:.3f} {x*z+ox+.7:.3f} {y*z+oy+.7:.3f}'
+        g=.7*self._s
+        lines=[f'{name} create oval {x*z+ox-g:.3f} {y*z+oy-g:.3f} {x*z+ox+g:.3f} {y*z+oy+g:.3f}'
                ' -fill #dee6eb -outline {} -tags {static grid}' for x in xs for y in ys]
         if lines:cv.tk.eval('\n'.join(lines))
         cv.tag_raise('grid','paper')
@@ -1827,7 +1842,7 @@ class ElectricalWorkApp:
                 cv.create_line(*self._xy(a,b),*self._xy(c,d),fill=GREEN,width=frame_w)
         for x,y,label in geo['labels']:
             cv.create_text(*self._xy(x,y),text=label,fill=GREEN,
-                           font=(FONT,max(9,round(12*self.zoom)),'bold'))
+                           font=(FONT,self._sheet_px(max(9,round(12*self.zoom/self._s))),'bold'))
         self._draw_title_block()
 
     def _draw_title_block(self):
@@ -1844,7 +1859,7 @@ class ElectricalWorkApp:
         if title_size is None:
             title_size=15
             while title_size>9:
-                f=tkfont.Font(family=FONT,size=max(7,int(title_size*self.zoom)),weight='bold')
+                f=tkfont.Font(family=FONT,size=self._sheet_px(max(7,int(title_size*self.zoom/self._s))),weight='bold')
                 if f.measure(title)<=box['title_max_width']*self.zoom:break
                 title_size-=1
             if len(self._title_fit_cache)>64:self._title_fit_cache.clear()
@@ -1856,7 +1871,7 @@ class ElectricalWorkApp:
             (f'{self.sheet_index+1}/{len(self.project["sheets"])}',box['right_center_x'],box['value_center_y'],13,INK,True)]:
             cx,cy=self._xy(x,y)
             cv.create_text(cx,cy,text=text,anchor='center',fill=fg,
-                  font=(FONT,max(7,int(size*self.zoom)), 'bold' if bold else 'normal'))
+                  font=(FONT,self._sheet_px(max(7,int(size*self.zoom/self._s))), 'bold' if bold else 'normal'))
 
     def _selected_el(self):
         if not self.selected or self.selected[0]!='element':return None
@@ -2553,12 +2568,12 @@ class ElectricalWorkApp:
         # pequeñas y evitando abrirla fuera del área visible.
         screen_width=panel.winfo_screenwidth()
         screen_height=panel.winfo_screenheight()
-        width=min(1100,max(400,screen_width-80))
-        height=min(670,max(350,screen_height-100))
+        width=min(_px(1100),max(_px(400),screen_width-_px(80)))
+        height=min(_px(670),max(_px(350),screen_height-_px(100)))
         left=max(0,(screen_width-width)//2)
         top=max(0,(screen_height-height)//2)
         panel.geometry(f'{width}x{height}+{left}+{top}')
-        panel.minsize(min(880,width),min(490,height))
+        panel.minsize(min(_px(880),width),min(_px(490),height))
         panel.configure(bg='#f8fbfd')
         panel.transient(self.root)
         bar=tk.Frame(panel,bg=NAVY,height=57)
@@ -2898,6 +2913,8 @@ class ElectricalWorkApp:
 
 
 def main():
+    # Nitidez con escalado de Windows: antes de crear la ventana.
+    dpi_ui.activar_dpi()
     root=tk.Tk()
     app=ElectricalWorkApp(root)
     if len(sys.argv)>1:
