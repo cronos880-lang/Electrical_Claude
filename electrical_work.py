@@ -69,6 +69,8 @@ class ElectricalWorkApp:
         self._static_key=None
         self._image_cache=OrderedDict()
         self._title_fit_cache={}
+        self._grid_job=None
+        self._grid_region=None
         self._documentation_window=None
         # El 100% es el tamaño que permite ver la hoja completa.
         # self.zoom se usa únicamente como escala efectiva de dibujo.
@@ -583,7 +585,12 @@ class ElectricalWorkApp:
         ybar=tk.Scrollbar(workspace,orient='vertical',command=self.canvas.yview)
         xbar.grid(row=1,column=0,sticky='ew')
         ybar.grid(row=0,column=1,sticky='ns')
-        self.canvas.configure(xscrollcommand=xbar.set,yscrollcommand=ybar.set)
+        # Además de mover las barras, completar la rejilla visible al desplazarse.
+        def xscroll(*args):
+            xbar.set(*args);self._schedule_grid()
+        def yscroll(*args):
+            ybar.set(*args);self._schedule_grid()
+        self.canvas.configure(xscrollcommand=xscroll,yscrollcommand=yscroll)
         self._xbar=xbar
         self._ybar=ybar
         self._scrollbars_visible=True
@@ -1104,6 +1111,9 @@ class ElectricalWorkApp:
         return 'break'
 
     def on_canvas_double(self,e):
+        # En Enmarcar, una segunda pulsación rápida empieza otro recuadro
+        # (Tk la entrega como doble clic y antes se perdía).
+        if self.tool=='select_box':return self.on_canvas_down(e)
         if self.tool!='select':return
         hit=self._hit(e)
         if hit and hit[0]=='element':
@@ -1586,13 +1596,48 @@ class ElectricalWorkApp:
         x1,y1=self._xy(PAGE_W,paper_h)
         tags=('static',)
         cv.create_rectangle(x0+3,y0+3,x1+3,y1+3,fill='#d5dfe8',outline='',tags=tags)
-        cv.create_rectangle(x0,y0,x1,y1,fill='white',outline='#bacbd7',width=1,tags=tags)
-        for x in range(0,PAGE_W+1,visual_grid):
-            for y in range(0,PAGE_H+1,visual_grid):
-                px,py=self._xy(x,y)
-                cv.create_oval(px-.7,py-.7,px+.7,py+.7,fill='#dee6eb',outline='',tags=tags)
+        cv.create_rectangle(x0,y0,x1,y1,fill='white',outline='#bacbd7',width=1,tags=tags+('paper',))
         self._draw_sheet()
         cv.addtag_withtag('static','all')
+        self._grid_step=visual_grid
+        self._grid_region=None
+        self._draw_grid()
+
+    def _schedule_grid(self):
+        if self._grid_job is None and hasattr(self,'canvas'):
+            self._grid_job=self.root.after_idle(self._draw_grid)
+
+    def _draw_grid(self):
+        """Puntos de la rejilla solo en la zona visible (más un margen).
+
+        Mismo aspecto que antes; a zoom alto evita crear miles de puntos que
+        quedan fuera de la pantalla. Se completa al desplazar la vista.
+        """
+        self._grid_job=None
+        cv=self.canvas
+        step=getattr(self,'_grid_step',None)
+        if not step or not cv.find_withtag('paper'):return
+        vx0,vy0=cv.canvasx(0),cv.canvasy(0)
+        vw,vh=max(1,cv.winfo_width()),max(1,cv.winfo_height())
+        region=self._grid_region
+        if region and region[0]<=vx0 and region[1]<=vy0 and vx0+vw<=region[2] and vy0+vh<=region[3]:
+            return
+        region=(vx0-vw,vy0-vh,vx0+2*vw,vy0+2*vh)
+        cv.delete('grid')
+        z=self.zoom
+        def span(lo,hi,offset,limit):
+            first=max(0,math.ceil((lo-offset)/z/step))*step
+            last=min(limit,math.floor((hi-offset)/z/step)*step)
+            return range(int(first),int(last)+1,step)
+        xs=span(region[0],region[2],self._offset_x,PAGE_W)
+        ys=span(region[1],region[3],self._offset_y,PAGE_H)
+        tags=('static','grid')
+        for x in xs:
+            for y in ys:
+                px,py=self._xy(x,y)
+                cv.create_oval(px-.7,py-.7,px+.7,py+.7,fill='#dee6eb',outline='',tags=tags)
+        cv.tag_raise('grid','paper')
+        self._grid_region=region
 
     def _draw_wire_overlay(self):
         """Rastro de cable y señal visual al llegar a puerto o cable existente."""

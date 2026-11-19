@@ -20,7 +20,6 @@ import sys
 import tempfile
 import time
 import tkinter as tk
-import tracemalloc
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -94,22 +93,50 @@ class Bench:
         """Pulsa en ``start`` (página) y arrastra ``steps`` pasos de rejilla."""
         cv = self.app.canvas
         x, y = self.page_to_widget(*start)
-        cv.event_generate('<ButtonPress-1>', x=x, y=y)
+        cv.event_generate('<ButtonPress-1>', x=x, y=y, time=tick())
         self.flush()
         samples = []
         for i in range(1, steps + 1):
             tx, ty = self.page_to_widget(start[0] + step[0] * i, start[1] + step[1] * i)
             t = time.perf_counter()
-            cv.event_generate('<B1-Motion>', x=tx, y=ty)
+            cv.event_generate('<B1-Motion>', x=tx, y=ty, time=tick())
             self.flush()
             samples.append((time.perf_counter() - t) * 1000)
-        cv.event_generate('<ButtonRelease-1>', x=tx, y=ty)
+        cv.event_generate('<ButtonRelease-1>', x=tx, y=ty, time=tick())
         t = time.perf_counter()
         self.flush()
         release = (time.perf_counter() - t) * 1000
-        # Evitar que la siguiente pulsación cuente como doble clic.
-        self.root.after(600)
         return samples, release
+
+
+_clock = [1000]
+
+
+def tick():
+    """Marca de tiempo creciente: evita que Tk tome dos pulsaciones
+    generadas seguidas como doble clic (abriría un diálogo)."""
+    _clock[0] += 1000
+    return _clock[0]
+
+
+def peak_rss_mb():
+    """Memoria máxima del proceso (Windows y Linux, sin dependencias)."""
+    try:
+        import resource
+        return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+    except ImportError:
+        import ctypes
+        from ctypes import wintypes
+
+        class PMC(ctypes.Structure):
+            _fields_ = [('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD),
+                        ('PeakWorkingSetSize', ctypes.c_size_t), ('WorkingSetSize', ctypes.c_size_t),
+                        ('a', ctypes.c_size_t), ('b', ctypes.c_size_t), ('c', ctypes.c_size_t),
+                        ('d', ctypes.c_size_t), ('e', ctypes.c_size_t), ('f', ctypes.c_size_t)]
+        pmc = PMC(); pmc.cb = ctypes.sizeof(PMC)
+        ctypes.windll.psapi.GetProcessMemoryInfo(ctypes.windll.kernel32.GetCurrentProcess(),
+                                                 ctypes.byref(pmc), pmc.cb)
+        return round(pmc.PeakWorkingSetSize / 1e6, 1)
 
 
 def summary(samples):
@@ -144,11 +171,10 @@ def run_case(name, cols, rows, dx, dy, zoom):
         if i % 2:  # alternar: deseleccionar (fondo) / seleccionar símbolo
             app.selected = None; app.redraw(); b.flush()
         t = time.perf_counter()
-        app.canvas.event_generate('<ButtonPress-1>', x=tx, y=ty)
-        app.canvas.event_generate('<ButtonRelease-1>', x=tx, y=ty)
+        app.canvas.event_generate('<ButtonPress-1>', x=tx, y=ty, time=tick())
+        app.canvas.event_generate('<ButtonRelease-1>', x=tx, y=ty, time=tick())
         b.flush()
         clicks.append((time.perf_counter() - t) * 1000)
-        b.root.after(600)
     result['clic_seleccion'] = summary(clicks)
     # Arrastre de un símbolo conectado.
     app.selected = None; app.multi_selected.clear(); app.redraw(); b.flush()
@@ -212,7 +238,6 @@ def main():
     out = None
     if '--json' in sys.argv:
         out = sys.argv[sys.argv.index('--json') + 1]
-    tracemalloc.start()
     t = time.perf_counter()
     b = Bench(); b.flush(); b.close()
     startup = (time.perf_counter() - t) * 1000
@@ -228,8 +253,7 @@ def main():
         results['casos'].append(run_case(*case))
         print(json.dumps(results['casos'][-1], ensure_ascii=False), flush=True)
     results['archivo'] = run_io(22, 7, 55, 115)
-    cur, peak = tracemalloc.get_traced_memory()
-    results['memoria_python_pico_mb'] = round(peak / 1e6, 1)
+    results['memoria_pico_mb'] = peak_rss_mb()
     print(json.dumps({k: v for k, v in results.items() if k != 'casos'}, ensure_ascii=False))
     if out:
         Path(out).write_text(json.dumps(results, indent=1, ensure_ascii=False), encoding='utf-8')
