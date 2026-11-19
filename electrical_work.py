@@ -75,6 +75,9 @@ class ElectricalWorkApp:
         self._grid_region=None
         self._shape_cache={}
         self._right=None
+        # Estilo inspirado en AutoCAD Electrical (opciones; ver _ESTILO).
+        self._style=self._read_style()
+        self._hover=None
         self._icon_photos={}
         self._semibold=None
         self._fast_zoom=False
@@ -116,6 +119,18 @@ class ElectricalWorkApp:
         self._bind_keys()
         self._set_tool('select')
         root.after(60,self.redraw)
+
+    # Opciones de acabado. Por defecto, el aspecto aprobado; se pueden
+    # activar para vista previa con la variable EW_ESTILO="rejilla,resaltado,
+    # pinzas,cruceta" (o "todo").
+    _ESTILO_DEFECTO=()
+
+    def _read_style(self):
+        names=('rejilla','resaltado','pinzas','cruceta')
+        raw=os.environ.get('EW_ESTILO')
+        chosen=set(self._ESTILO_DEFECTO) if raw is None else {n.strip() for n in raw.split(',')}
+        if 'todo' in chosen:chosen=set(names)
+        return {n:(n in chosen) for n in names}
 
     def _sheet_px(self,points):
         """Tamaño de letra del plano en píxeles (negativo para Tk): mismo
@@ -902,6 +917,7 @@ class ElectricalWorkApp:
         return found
 
     def on_canvas_down(self,e):
+        self.canvas.delete('hover');self._hover=None
         # El modo de encuadre es deliberado y no interfiere con arrastrar la hoja.
         if self.tool=='select_box':
             self.dragging=None
@@ -1205,6 +1221,10 @@ class ElectricalWorkApp:
         if self.tool=='select' and not self.dragging and self._right is None:
             # Cursor de movimiento solo sobre una etiqueta desplazable.
             self.canvas.configure(cursor='fleur' if self._hit_annotation(e) else 'arrow')
+            if self._style['resaltado'] and self.marquee_start is None:
+                hit=self._hit(e)
+                if hit!=self._hover:self._draw_hover(hit)
+        if self._style['cruceta']:self._draw_crosshair(e)
         if self.tool in ('wire','wire_straight','wire_rectangle'):self._draw_wire_overlay()
 
     def on_mousewheel(self,e):
@@ -1519,8 +1539,55 @@ class ElectricalWorkApp:
         if sel:
             for a,b in (pts[0],pts[-1]):
                 xp,yp=self._xy(a,b)
+                if self._style['pinzas']:
+                    self._grip(xp,yp,tags)
+                    continue
                 h=4*self._s
                 cv.create_oval(xp-h,yp-h,xp+h,yp+h,fill=TEAL,outline='white',tags=tags)
+
+    def _grip(self,x,y,tags):
+        h=round(3.5*self._s)
+        x,y=round(x),round(y)
+        self.canvas.create_rectangle(x-h,y-h,x+h,y+h,fill=TEAL,outline='white',
+                                     width=max(1,round(self._s)),tags=tags)
+
+    def _draw_hover(self,hit):
+        """Resaltado previo del objeto bajo el cursor (selection preview)."""
+        cv=self.canvas
+        cv.delete('hover')
+        self._hover=hit
+        if hit is None or hit in self._selection_items():return
+        typ,ident=hit
+        light='#d5f1ee'
+        if typ=='wire':
+            wire=next((w for w in self.doc['wires'] if w['id']==ident),None)
+            if wire is None:return
+            coords=[c for p in wire['points'] for c in self._xy(*p)]
+            width=quality_render.stroke_px(self.zoom)+round(6*self._s)
+            cv.create_line(coords,fill=light,width=width,capstyle='round',
+                           joinstyle='round',tags=('hover',))
+        else:
+            box=cv.bbox(f'element:{ident}')
+            if not box:return
+            p=3*self._s
+            cv.create_rectangle(box[0]-p,box[1]-p,box[2]+p,box[3]+p,fill='#e9f8f6',
+                                outline='#b5e4de',tags=('hover',))
+        if cv.find_withtag('grid'):cv.tag_raise('hover','grid')
+        else:cv.tag_raise('hover','paper')
+
+    def _draw_crosshair(self,e):
+        cv=self.canvas
+        x,y=cv.canvasx(e.x),cv.canvasy(e.y)
+        x0,y0=cv.canvasx(0),cv.canvasy(0)
+        x1,y1=x0+cv.winfo_width(),y0+cv.winfo_height()
+        items=cv.find_withtag('crosshair')
+        if len(items)!=2:
+            cv.delete('crosshair')
+            items=(cv.create_line(0,0,0,0,fill='#9cb1c0',tags=('crosshair',)),
+                   cv.create_line(0,0,0,0,fill='#9cb1c0',tags=('crosshair',)))
+        cv.coords(items[0],x0,round(y)+.5,x1,round(y)+.5)
+        cv.coords(items[1],round(x)+.5,y0,round(x)+.5,y1)
+        cv.tag_raise('crosshair')
 
     def _selection_box(self,item):
         xp,yp=self._xy(item['x'],item['y'])
@@ -1558,7 +1625,12 @@ class ElectricalWorkApp:
         if with_image and item['kind']=='image':
             self._draw_image(item)
         if selected:
-            cv.create_rectangle(*self._selection_box(item),outline='#81d5d1',dash=(4,3),width=1.5,tags=tags)
+            if self._style['pinzas'] and item['kind'] not in ('text','image'):
+                # Pinzamientos en los bornes, como los «grips» de AutoCAD.
+                for gx,gy in port_positions(item):
+                    self._grip(*self._xy(gx,gy),tags)
+            else:
+                cv.create_rectangle(*self._selection_box(item),outline='#81d5d1',dash=(4,3),width=1.5,tags=tags)
         if item['kind']=='image':return
         body,labels=self._item_shapes(item)
         ink=TEAL if selected else INK
@@ -1717,7 +1789,7 @@ class ElectricalWorkApp:
             self._static_key=static_key
         else:
             # Solo se rehace el dibujo; papel, rejilla, marco y cajetín se conservan.
-            cv.delete('dyn','wire-overlay','selection-marquee')
+            cv.delete('dyn','wire-overlay','selection-marquee','hover')
         self._image_refs=[]
         self._quality_images=[]
         if not self._fast_zoom:
@@ -1741,6 +1813,9 @@ class ElectricalWorkApp:
                  stipple='gray25',dash=(5,3),width=1.5,tags=('selection-marquee',))
         # Todo lo creado tras la capa estática pertenece a la capa dinámica.
         cv.addtag_withtag('dyn','all')
+        cv.dtag('crosshair','dyn')
+        cv.tag_raise('crosshair')
+        self._hover=None
         cv.dtag('static','dyn')
 
     def _draw_static(self,paper_h,visual_grid):
@@ -1790,7 +1865,14 @@ class ElectricalWorkApp:
         z,ox,oy=self.zoom,self._offset_x,self._offset_y
         g=.7*self._s
         lines=[f'{name} create oval {x*z+ox-g:.3f} {y*z+oy-g:.3f} {x*z+ox+g:.3f} {y*z+oy+g:.3f}'
-               ' -fill #dee6eb -outline {} -tags {static grid}' for x in xs for y in ys]
+               ' -fill #dee6eb -outline {} -tags {static grid}' for x in xs for y in ys
+               if not (self._style['rejilla'] and x%100==0 and y%100==0)]
+        if self._style['rejilla']:
+            # Punto principal cada 100 unidades (como las divisiones de CAD).
+            G=1.25*self._s
+            lines+=[f'{name} create oval {x*z+ox-G:.3f} {y*z+oy-G:.3f} {x*z+ox+G:.3f} {y*z+oy+G:.3f}'
+                    ' -fill #c3cfd8 -outline {} -tags {static grid}'
+                    for x in xs for y in ys if x%100==0 and y%100==0]
         if lines:cv.tk.eval('\n'.join(lines))
         cv.tag_raise('grid','paper')
         self._grid_region=region
