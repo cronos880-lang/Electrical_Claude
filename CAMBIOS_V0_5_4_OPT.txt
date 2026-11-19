@@ -51,6 +51,15 @@ ACABADO ESTILO AUTOCAD ELECTRICAL (aprobado: solo opción A)
 - Las opciones B (resaltado), C (pinzamientos) y D (cruceta) quedan
   desactivadas en el código por si se quieren en el futuro.
 
+REVISIÓN 5 (pedido del usuario)
+- Documentación: filas alternas blanco / azul claro y altura de fila adaptada
+  al tamaño de letra y al modo DPI (antes el texto quedaba apretado).
+- Barra de edición: con el modo DPI los botones de hojas ya no se montan;
+  la barra calcula el espacio en píxeles lógicos y agrupa en «Hojas ▾» si
+  no caben (como antes del modo DPI).
+- Zoom: la casilla muestra el porcentaje redondeado (71 en vez de 71.178)
+  y al pulsarla se marca todo el número: lo que se escriba lo sustituye.
+
 CORRECCIÓN
 - Enmarcar: dos recuadros seguidos rápidamente ya no se pierden (la segunda
   pulsación se tomaba como doble clic).

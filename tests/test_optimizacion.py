@@ -221,6 +221,28 @@ class PartialRedrawGUI(unittest.TestCase):
         self.assertEqual(refined[0], self._state()[0])
         self.assertEqual(images, len(cv.find_withtag('drawing')))
 
+    def test_zoom_entry_selects_all_on_focus(self):
+        entry = self.app.zoom_entry
+        entry.focus_force()
+        for _ in range(5):
+            self.root.update()
+        self.assertTrue(entry.selection_present())
+        self.assertEqual(entry.selection_get(), self.app._zoom_var.get())
+
+    def test_zoom_text_fits_box(self):
+        self.assertEqual(self.app._zoom_text(71.178), '71')
+        self.assertEqual(self.app._zoom_text(250), '250')
+        self.assertEqual(self.app._zoom_text(5.25), '5.2')
+
+    def test_toolbar_uses_logical_width(self):
+        self.app._compact_toolbar = None
+        self.app._s, old = 1.5, self.app._s
+        try:
+            self.app._responsive_toolbar(1920)  # 1920 px reales al 150 % = 1280 lógicos
+            self.assertFalse(self.app._compact_toolbar[0], 'Con 1280 lógicos no cabe la barra completa')
+        finally:
+            self.app._s = old
+
     def test_static_layer_kept_and_rebuilt_on_zoom(self):
         cv = self.app.canvas
         static = cv.find_withtag('static')

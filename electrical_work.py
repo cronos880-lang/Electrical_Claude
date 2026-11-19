@@ -619,6 +619,12 @@ class ElectricalWorkApp:
         self.zoom_entry.bind('<Return>',self.apply_zoom_entry)
         self.zoom_entry.bind('<KP_Enter>',self.apply_zoom_entry)
         self.zoom_entry.bind('<FocusOut>',self.apply_zoom_entry)
+        # Al pulsar la casilla se marca todo el número: lo que se escriba lo
+        # sustituye directamente, sin tener que borrar.
+        def select_all(event=None):
+            entry=self.zoom_entry
+            entry.selection_range(0,'end');entry.icursor('end')
+        self.zoom_entry.bind('<FocusIn>',lambda e:self.root.after_idle(select_all),add='+')
         tk.Label(zoom_controls,text='%',font=self._semi(9),fg=INK,bg='#f8fbfd').pack(side='left',padx=(0,7))
         zoom_in=self._btn(zoom_controls,'+',lambda:self.set_zoom(self.zoom_percent+10),
                            bg='#edf3f7',fg=INK,padx=9,pady=5)
@@ -674,6 +680,9 @@ class ElectricalWorkApp:
         """
         # El nombre de hoja tiene prioridad sobre botones secundarios.
         # A anchuras intermedias, esos botones se agrupan en «Hojas».
+        # Umbrales en píxeles lógicos: con el modo DPI la ventana mide más
+        # píxeles reales, pero los botones también ocupan más.
+        window_width=window_width/self._s
         full=window_width >= 1890
         picker_width=(58 if full else 64 if window_width >= 1460
                       else 55 if window_width >= 1300
@@ -2391,7 +2400,10 @@ class ElectricalWorkApp:
 
     @staticmethod
     def _zoom_text(percent):
-        return f'{percent:g}'
+        # Se muestra redondeado para que quepa en la casilla; el zoom interno
+        # conserva su valor exacto.
+        if percent>=10:return str(int(round(percent)))
+        return f'{percent:.1f}'.rstrip('0').rstrip('.')
 
     def apply_zoom_entry(self,event=None):
         """Permite zoom numérico libre en % (1 a 1000), sin escalones."""
@@ -2676,15 +2688,23 @@ class ElectricalWorkApp:
         table_frame=tk.Frame(panel,bg='#f8fbfd')
         table_frame.pack(fill='both',expand=True,padx=16,pady=5)
         columns=('group','reference','description','sheets')
-        tree=ttk.Treeview(table_frame,columns=columns,show='headings',selectmode='browse')
+        # Filas alternas blanco / azul claro y altura adaptada al tamaño de
+        # letra (y al modo DPI) para seguir cada línea sin esfuerzo.
+        style=ttk.Style(panel)
+        line=tkfont.nametofont('TkDefaultFont').metrics('linespace')
+        style.configure('Doc.Treeview',rowheight=line+_px(8))
+        tree=ttk.Treeview(table_frame,columns=columns,show='headings',selectmode='browse',
+                          style='Doc.Treeview')
+        tree.tag_configure('par',background='#ffffff')
+        tree.tag_configure('impar',background='#e8f2fb')
         tree.heading('group',text='Familia')
         tree.heading('reference',text='Referencia')
         tree.heading('description',text='Descripción (doble clic para editar)')
         tree.heading('sheets',text='Hoja')
-        tree.column('group',width=170,minwidth=120,stretch=False)
-        tree.column('reference',width=145,minwidth=95,stretch=False)
-        tree.column('description',width=610,minwidth=280,stretch=True)
-        tree.column('sheets',width=60,minwidth=50,stretch=False,anchor='center')
+        tree.column('group',width=_px(170),minwidth=_px(120),stretch=False)
+        tree.column('reference',width=_px(145),minwidth=_px(95),stretch=False)
+        tree.column('description',width=_px(610),minwidth=_px(280),stretch=True)
+        tree.column('sheets',width=_px(60),minwidth=_px(50),stretch=False,anchor='center')
         scroll=tk.Scrollbar(table_frame,orient='vertical',command=tree.yview)
         tree.configure(yscrollcommand=scroll.set)
         tree.pack(side='left',fill='both',expand=True)
@@ -2712,7 +2732,8 @@ class ElectricalWorkApp:
                     continue
                 tree.insert('',tk.END,iid=record['key'],
                     values=(record['group'],record['reference'],
-                            record['description'],record['sheets']))
+                            record['description'],record['sheets']),
+                    tags=('impar' if visible%2 else 'par',))
                 visible+=1
             count_var.set(f'{visible} de {len(rows)} referencias')
             if selected and tree.exists(selected[0]):
