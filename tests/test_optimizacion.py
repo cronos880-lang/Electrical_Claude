@@ -200,6 +200,27 @@ class PartialRedrawGUI(unittest.TestCase):
         self.assertEqual([(e['x'], e['y']) for e in self.app.doc['elements']],
                          [(e['x'], e['y']) for e in before])
 
+    def test_progressive_wheel_zoom_ends_identical_to_full(self):
+        cv = self.app.canvas
+        for _ in range(3):
+            cv.event_generate('<Button-4>', x=400, y=300)
+        self.root.update()
+        if quality_render.AVAILABLE:
+            self.assertTrue(self.app._pending_quality or self.app._refine_job)
+        # Esperar al afinado en segundo plano.
+        for _ in range(400):
+            self.root.update()
+            if not self.app._pending_quality and self.app._refine_job is None:
+                break
+            self.root.after(10)
+        self.assertFalse(self.app._pending_quality)
+        refined = self._state()
+        images = len(cv.find_withtag('drawing'))
+        self.app.redraw()
+        self.root.update()
+        self.assertEqual(refined[0], self._state()[0])
+        self.assertEqual(images, len(cv.find_withtag('drawing')))
+
     def test_static_layer_kept_and_rebuilt_on_zoom(self):
         cv = self.app.canvas
         static = cv.find_withtag('static')

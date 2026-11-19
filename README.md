@@ -1,3 +1,11 @@
+# Electrical Work Compacto V0.5.4 OPT — versión EXPERIMENTAL optimizada
+
+> Copia de trabajo de la V0.5.3 con optimización de rendimiento y calidad de dibujo.
+> **No es oficial** hasta su aprobación. La base intacta está en la etiqueta `base-v0.5.3`.
+> Lee `LEEME_PRIMERO_V0_5_4_OPT.txt`, `CAMBIOS_V0_5_4_OPT.txt` y `docs/INFORME_OPTIMIZACION.md`.
+
+---
+
 # Electrical Work Compacto V0.5 — revisión gráfica de prueba
 
 **Rama:** `desarrollo-compacto`  

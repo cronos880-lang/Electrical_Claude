@@ -1,4 +1,4 @@
-"""Electrical Work Compacto 0.5.3 - editor autónomo de esquemas eléctricos (sin simulación).
+"""Electrical Work Compacto 0.5.4 OPT (experimental) - editor autónomo de esquemas eléctricos (sin simulación).
 
 Requisitos: Python 3.9 o superior, Tkinter (incluido normalmente en Windows).
 """
@@ -71,6 +71,10 @@ class ElectricalWorkApp:
         self._title_fit_cache={}
         self._grid_job=None
         self._grid_region=None
+        self._shape_cache={}
+        self._fast_zoom=False
+        self._pending_quality=set()
+        self._refine_job=None
         self._documentation_window=None
         # El 100% es el tamaño que permite ver la hoja completa.
         # self.zoom se usa únicamente como escala efectiva de dibujo.
@@ -91,7 +95,7 @@ class ElectricalWorkApp:
         self._status_var=tk.StringVar(value='Listo para dibujar')
         self._zoom_var=tk.StringVar(value='100')
         self._selection_var=tk.StringVar(value='Sin selección')
-        root.title('Electrical Work · COMPACTO V0.5.3')
+        root.title('Electrical Work · COMPACTO V0.5.4 OPT')
         root.configure(bg=BG)
         root.geometry('1450x900')
         root.minsize(980,600)
@@ -463,7 +467,7 @@ class ElectricalWorkApp:
         titlebox=tk.Frame(brand,bg=NAVY)
         titlebox.pack(side='left',padx=10,pady=7)
         self._text(titlebox,'ELECTRICAL WORK',12,'bold','#ffffff').pack(anchor='w')
-        self._text(titlebox,'EDITOR DE ESQUEMAS · COMPACTO 70 % · V0.5.3',8,'normal','#9db2c5').pack(anchor='w')
+        self._text(titlebox,'EDITOR DE ESQUEMAS · COMPACTO 70 % · V0.5.4 OPT',8,'normal','#9db2c5').pack(anchor='w')
         actions=tk.Frame(top,bg=NAVY)
         actions.pack(side='right',padx=(0,12),pady=9)
         for name,command,bg in [
@@ -1141,7 +1145,13 @@ class ElectricalWorkApp:
         steps=min(8,max(1,round(abs(delta)/120)))
         factor=1.12**steps
         zoom=self.zoom_percent*(factor if delta>0 else 1/factor)
-        self.set_zoom(zoom,anchor=(e.x,e.y))
+        # Zoom progresivo: respuesta inmediata con trazo vectorial para lo
+        # que aún no está en caché; se afina en segundo plano al parar.
+        self._fast_zoom=True
+        try:
+            self.set_zoom(zoom,anchor=(e.x,e.y))
+        finally:
+            self._fast_zoom=False
         return 'break'
 
     def _text_dialog(self,item=None):
@@ -1343,6 +1353,9 @@ class ElectricalWorkApp:
         ix,iy,fx,fy=quality_render.origin_phase(ox,oy,self.zoom)
         width=quality_render.stroke_px(self.zoom)
         key=('body',round(self.zoom,6),color,width,fx,fy,quality_render.shapes_key(shapes,ox,oy))
+        if self._fast_zoom and key not in self._symbol_cache:
+            self._defer_quality(shapes,tags,color)
+            return
         entry=self._raster_photo(key,lambda:quality_render.render(shapes,self.zoom,color,width,origin))
         if entry is None:
             for shape in shapes:self._draw_shape(shape,tags,color)
@@ -1353,11 +1366,42 @@ class ElectricalWorkApp:
         ox,oy=origin
         ix,iy,fx,fy=quality_render.origin_phase(ox,oy,self.zoom)
         key=('label',round(self.zoom,6),fx,fy,quality_render.shapes_key([shape],ox,oy))
+        if self._fast_zoom and key not in self._symbol_cache:
+            self._defer_quality([shape],tags,shape[5] if len(shape)>5 else INK)
+            return
         entry=self._raster_photo(key,lambda:quality_render.render_label(shape,self.zoom,origin))
         if entry is None:
             self._draw_shape(shape,tags)
             return
         self._place_raster(entry,ix,iy,tags)
+
+    def _defer_quality(self,shapes,tags,color):
+        """Dibujo provisional (vectorial) y afinado posterior por tandas."""
+        for shape in shapes:self._draw_shape(shape,tags,color)
+        for tag in tags:
+            if tag.startswith('element:'):self._pending_quality.add(('element',tag[8:]))
+            elif tag.startswith('wire:'):self._pending_quality.add(('wire',tag[5:]))
+            elif tag=='junction-dot':self._pending_quality.add(('junction',''))
+        if self._refine_job is not None:
+            self.root.after_cancel(self._refine_job)
+        self._refine_job=self.root.after(140,self._refine_quality)
+
+    def _refine_quality(self):
+        self._refine_job=None
+        if self._fast_zoom or self.dragging is not None:
+            self._refine_job=self.root.after(140,self._refine_quality)
+            return
+        pending=self._pending_quality
+        if not pending:return
+        batch=[pending.pop() for _ in range(min(24,len(pending)))]
+        elements=[ident for typ,ident in batch if typ=='element']
+        wires=[ident for typ,ident in batch if typ=='wire']
+        self._refresh_items(elements,wires)
+        if pending:
+            self._refine_job=self.root.after(1,self._refine_quality)
+        else:
+            # Orden de apilado definitivo idéntico al redibujado normal.
+            self.redraw()
 
     def _crisp_polyline(self,points,width,color,tags=()):
         """Trazo ortogonal nítido: cada tramo es un rectángulo de píxeles exactos.
@@ -1442,19 +1486,52 @@ class ElectricalWorkApp:
         if selected:
             cv.create_rectangle(*self._selection_box(item),outline='#81d5d1',dash=(4,3),width=1.5,tags=tags)
         if item['kind']=='image':return
-        body=symbol_shapes(item,include_annotations=False)
+        body,labels=self._item_shapes(item)
         ink=TEAL if selected else INK
         origin=(item['x'],item['y'])
         if quality_render.AVAILABLE:
             self._draw_quality_symbol(body,tags,ink,origin)
         else:
             for shape in body:self._draw_shape(shape,tags,ink)
-        for key,shape in annotation_positions(item):
+        for key,shape in labels:
             labeltags=tags+(f'annotation:{item["id"]}:{key}',)
             if quality_render.AVAILABLE:
                 self._draw_quality_label(shape,labeltags,origin)
             else:
                 self._draw_shape(shape,labeltags,ink)
+
+    @staticmethod
+    def _translate(shape,dx,dy):
+        typ=shape[0]
+        if typ in ('line','dashline'):
+            return (typ,shape[1]+dx,shape[2]+dy,shape[3]+dx,shape[4]+dy)
+        if typ in ('polygon','filledpolygon'):
+            return (typ,[(x+dx,y+dy) for x,y in shape[1]])
+        return (typ,shape[1]+dx,shape[2]+dy)+tuple(shape[3:])
+
+    def _item_shapes(self,item):
+        """Formas del símbolo y sus etiquetas, memorizadas por contenido.
+
+        La geometría compacta solo depende del elemento relativo a su origen;
+        al moverlo se traslada en lugar de recalcularse. El PDF y el SVG no
+        usan esta caché."""
+        x,y=item['x'],item['y']
+        try:
+            key=repr(sorted((k,v) for k,v in item.items() if k not in ('x','y')))
+        except TypeError:
+            key=None
+        cached=self._shape_cache.get(key) if key is not None else None
+        if cached is None:
+            body=symbol_shapes(item,include_annotations=False)
+            labels=annotation_positions(item)
+            cached=([self._translate(s,-x,-y) for s in body],
+                    [(k,self._translate(s,-x,-y)) for k,s in labels])
+            if key is not None:
+                if len(self._shape_cache)>4000:self._shape_cache.clear()
+                self._shape_cache[key]=cached
+        body,labels=cached
+        return ([self._translate(s,x,y) for s in body],
+                [(k,self._translate(s,x,y)) for k,s in labels])
 
     def _draw_junctions(self):
         cv=self.canvas
@@ -1569,6 +1646,8 @@ class ElectricalWorkApp:
             cv.delete('dyn','wire-overlay','selection-marquee')
         self._image_refs=[]
         self._quality_images=[]
+        if not self._fast_zoom:
+            self._pending_quality.clear()
 
         for item in self.doc['elements']:
             if item['kind']=='image':self._draw_image(item)
@@ -1622,7 +1701,7 @@ class ElectricalWorkApp:
         region=self._grid_region
         if region and region[0]<=vx0 and region[1]<=vy0 and vx0+vw<=region[2] and vy0+vh<=region[3]:
             return
-        region=(vx0-vw,vy0-vh,vx0+2*vw,vy0+2*vh)
+        region=(vx0-vw/2,vy0-vh/2,vx0+1.5*vw,vy0+1.5*vh)
         cv.delete('grid')
         z=self.zoom
         def span(lo,hi,offset,limit):
@@ -1631,11 +1710,13 @@ class ElectricalWorkApp:
             return range(int(first),int(last)+1,step)
         xs=span(region[0],region[2],self._offset_x,PAGE_W)
         ys=span(region[1],region[3],self._offset_y,PAGE_H)
-        tags=('static','grid')
-        for x in xs:
-            for y in ys:
-                px,py=self._xy(x,y)
-                cv.create_oval(px-.7,py-.7,px+.7,py+.7,fill='#dee6eb',outline='',tags=tags)
+        # Una sola llamada a Tcl para todos los puntos (mucho más rápido que
+        # una llamada por punto desde Python). Mismo óvalo y mismo color.
+        name=str(cv)
+        z,ox,oy=self.zoom,self._offset_x,self._offset_y
+        lines=[f'{name} create oval {x*z+ox-.7:.3f} {y*z+oy-.7:.3f} {x*z+ox+.7:.3f} {y*z+oy+.7:.3f}'
+               ' -fill #dee6eb -outline {} -tags {static grid}' for x in xs for y in ys]
+        if lines:cv.tk.eval('\n'.join(lines))
         cv.tag_raise('grid','paper')
         self._grid_region=region
 
@@ -1769,7 +1850,7 @@ class ElectricalWorkApp:
 
     def _update_caption(self):
         name=os.path.basename(self.filepath) if self.filepath else 'Sin guardar'
-        self.root.title(f'Electrical Work · {name}{" *" if self.dirty else ""} · COMPACTO V0.5.3')
+        self.root.title(f'Electrical Work · {name}{" *" if self.dirty else ""} · COMPACTO V0.5.4 OPT')
 
     def return_to_pointer(self,event=None):
         """Esc siempre desactiva la herramienta de dibujo actual."""

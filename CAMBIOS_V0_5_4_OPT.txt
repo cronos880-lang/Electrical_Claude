@@ -1,0 +1,39 @@
+CAMBIOS V0.5.4 OPT (EXPERIMENTAL) — sobre Compacto V0.5.3
+==========================================================
+Objetivo: fluidez y calidad de dibujo. Misma interfaz, mismas herramientas.
+
+RENDIMIENTO (esquema de 154 símbolos, mediana por paso)
+- Arrastrar un símbolo:        542 ms -> 5 ms
+- Arrastrar un grupo:          531 ms -> 30 ms
+- Clic de selección:           539 ms -> 28 ms
+- Zoom con la rueda:          1059 ms -> 112 ms
+- Con zoom 250 % las mejoras son aún mayores (detalle en docs/INFORME_OPTIMIZACION.md).
+
+CÓMO
+- Caché de imágenes de símbolos/etiquetas que ya no se vacía y que sirve
+  aunque el símbolo se mueva.
+- Durante los arrastres solo se redibuja lo que se mueve.
+- Papel, rejilla, marco y cajetín se dibujan una vez por zoom.
+- Rejilla solo en la zona visible.
+- Zoom progresivo: respuesta inmediata y afinado al parar la rueda.
+- Imágenes insertadas y fuentes en memoria.
+
+CALIDAD GRÁFICA
+- Mismo grosor de línea en cables, símbolos y uniones; líneas horizontales y
+  verticales nítidas (alineadas al píxel).
+- Uniones cable-borne continuas (antes había cambios de grosor y huecos).
+- Curvas y oblicuas suavizadas sin halos; textos más nítidos.
+
+CORRECCIÓN
+- Enmarcar: dos recuadros seguidos rápidamente ya no se pierden (la segunda
+  pulsación se tomaba como doble clic).
+
+SIN CAMBIOS
+- Interfaz, colores, textos (salvo «V0.5.4 OPT»), herramientas, atajos,
+  dimensiones y bornes de los símbolos, coordenadas, formato .ework, PDF,
+  SVG, documentación e INICIAR_WINDOWS.bat.
+
+ARCHIVOS MODIFICADOS
+- electrical_work.py, quality_render.py, core.py (solo junction_points).
+- Nuevos: tests/test_optimizacion.py, tests/bench_rendimiento.py,
+  MEDIR_RENDIMIENTO.bat, docs/.

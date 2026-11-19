@@ -1,0 +1,196 @@
+{
+ "python": "3.12.11",
+ "tk": 8.6,
+ "arranque_ms": 304.7,
+ "casos": [
+  {
+   "caso": "mediano",
+   "zoom": 100,
+   "simbolos": 60,
+   "cables": 59,
+   "items_canvas": 3245,
+   "redibujado_inicial_ms": 15.62,
+   "redibujado_completo": {
+    "media_ms": 11.45,
+    "mediana_ms": 11.44,
+    "p95_ms": 11.66,
+    "max_ms": 11.66,
+    "n": 8
+   },
+   "clic_seleccion": {
+    "media_ms": 11.95,
+    "mediana_ms": 11.57,
+    "p95_ms": 13.16,
+    "max_ms": 13.16,
+    "n": 5
+   },
+   "arrastre_simbolo": {
+    "media_ms": 3.62,
+    "mediana_ms": 2.99,
+    "p95_ms": 6.74,
+    "max_ms": 7.47,
+    "n": 30
+   },
+   "arrastre_simbolo_soltar_ms": 7.8,
+   "arrastre_grupo": {
+    "media_ms": 18.63,
+    "mediana_ms": 17.49,
+    "p95_ms": 22.51,
+    "max_ms": 22.61,
+    "n": 30
+   },
+   "arrastre_grupo_objetos": 18,
+   "arrastre_grupo_soltar_ms": 10.29,
+   "enmarcar": {
+    "media_ms": 0.53,
+    "mediana_ms": 0.46,
+    "p95_ms": 0.96,
+    "max_ms": 1.16,
+    "n": 30
+   },
+   "enmarcar_soltar_ms": 7.02,
+   "zoom_rueda": {
+    "media_ms": 79.75,
+    "mediana_ms": 71.41,
+    "p95_ms": 119.54,
+    "max_ms": 119.54,
+    "n": 6
+   },
+   "raton_cable": {
+    "media_ms": 0.6,
+    "mediana_ms": 0.59,
+    "p95_ms": 0.76,
+    "max_ms": 0.76,
+    "n": 20
+   }
+  },
+  {
+   "caso": "grande",
+   "zoom": 100,
+   "simbolos": 154,
+   "cables": 153,
+   "items_canvas": 3527,
+   "redibujado_inicial_ms": 38.75,
+   "redibujado_completo": {
+    "media_ms": 28.75,
+    "mediana_ms": 26.42,
+    "p95_ms": 38.84,
+    "max_ms": 38.84,
+    "n": 8
+   },
+   "clic_seleccion": {
+    "media_ms": 30.15,
+    "mediana_ms": 27.96,
+    "p95_ms": 39.44,
+    "max_ms": 39.44,
+    "n": 5
+   },
+   "arrastre_simbolo": {
+    "media_ms": 5.26,
+    "mediana_ms": 4.83,
+    "p95_ms": 7.26,
+    "max_ms": 7.41,
+    "n": 30
+   },
+   "arrastre_simbolo_soltar_ms": 18.05,
+   "arrastre_grupo": {
+    "media_ms": 30.09,
+    "mediana_ms": 29.96,
+    "p95_ms": 32.8,
+    "max_ms": 33.61,
+    "n": 30
+   },
+   "arrastre_grupo_objetos": 26,
+   "arrastre_grupo_soltar_ms": 19.93,
+   "enmarcar": {
+    "media_ms": 0.87,
+    "mediana_ms": 0.78,
+    "p95_ms": 1.79,
+    "max_ms": 1.81,
+    "n": 30
+   },
+   "enmarcar_soltar_ms": 16.5,
+   "zoom_rueda": {
+    "media_ms": 132.34,
+    "mediana_ms": 112.07,
+    "p95_ms": 240.36,
+    "max_ms": 240.36,
+    "n": 6
+   },
+   "raton_cable": {
+    "media_ms": 1.23,
+    "mediana_ms": 1.12,
+    "p95_ms": 1.89,
+    "max_ms": 1.89,
+    "n": 20
+   }
+  },
+  {
+   "caso": "grande",
+   "zoom": 250,
+   "simbolos": 154,
+   "cables": 153,
+   "items_canvas": 5872,
+   "redibujado_inicial_ms": 416.66,
+   "redibujado_completo": {
+    "media_ms": 22.42,
+    "mediana_ms": 20.46,
+    "p95_ms": 26.8,
+    "max_ms": 26.8,
+    "n": 8
+   },
+   "clic_seleccion": {
+    "media_ms": 23.95,
+    "mediana_ms": 22.26,
+    "p95_ms": 29.74,
+    "max_ms": 29.74,
+    "n": 5
+   },
+   "arrastre_simbolo": {
+    "media_ms": 4.97,
+    "mediana_ms": 4.85,
+    "p95_ms": 5.96,
+    "max_ms": 9.33,
+    "n": 30
+   },
+   "arrastre_simbolo_soltar_ms": 7.43,
+   "arrastre_grupo": {
+    "media_ms": 35.92,
+    "mediana_ms": 36.9,
+    "p95_ms": 38.78,
+    "max_ms": 41.72,
+    "n": 30
+   },
+   "arrastre_grupo_objetos": 26,
+   "arrastre_grupo_soltar_ms": 8.63,
+   "enmarcar": {
+    "media_ms": 1.65,
+    "mediana_ms": 1.07,
+    "p95_ms": 3.74,
+    "max_ms": 4.07,
+    "n": 30
+   },
+   "enmarcar_soltar_ms": 8.54,
+   "zoom_rueda": {
+    "media_ms": 68.18,
+    "mediana_ms": 68.31,
+    "p95_ms": 75.65,
+    "max_ms": 75.65,
+    "n": 6
+   },
+   "raton_cable": {
+    "media_ms": 1.29,
+    "mediana_ms": 1.28,
+    "p95_ms": 1.51,
+    "max_ms": 1.51,
+    "n": 20
+   }
+  }
+ ],
+ "archivo": {
+  "guardar_ms": 5.66,
+  "cargar_ms": 2.66,
+  "bytes": 70571
+ },
+ "memoria_pico_mb": 112.1
+}
