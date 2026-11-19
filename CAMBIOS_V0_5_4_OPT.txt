@@ -24,12 +24,22 @@ CALIDAD GRÁFICA
 - Uniones cable-borne continuas (antes había cambios de grosor y huecos).
 - Curvas y oblicuas suavizadas sin halos; textos más nítidos.
 
+NUEVO MANEJO DEL RATÓN (pedido por el usuario, revisión 2)
+- Puntero + botón izquierdo sobre un objeto: seleccionar y arrastrar (igual).
+- Puntero + botón izquierdo en vacío: arrastrar marca un recuadro de
+  selección (antes desplazaba la hoja). Clic en vacío quita la selección.
+- Botón derecho arrastrando: desplaza la hoja ampliada (cualquier herramienta).
+- Botón derecho sin arrastrar con objetos marcados: los borra (Ctrl+Z deshace).
+  Sin selección: menú de etiquetas o cancelar el trazo, como antes.
+- Se retira «Enmarcar» del desplegable de Líneas (ya lo hace el Puntero).
+
 CORRECCIÓN
 - Enmarcar: dos recuadros seguidos rápidamente ya no se pierden (la segunda
   pulsación se tomaba como doble clic).
 
 SIN CAMBIOS
-- Interfaz, colores, textos (salvo «V0.5.4 OPT»), herramientas, atajos,
+- Interfaz, colores, textos (salvo «V0.5.4 OPT» y las ayudas del Puntero),
+  herramientas (salvo Enmarcar, retirado a petición), atajos,
   dimensiones y bornes de los símbolos, coordenadas, formato .ework, PDF,
   SVG, documentación e INICIAR_WINDOWS.bat.
 

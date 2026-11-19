@@ -139,7 +139,23 @@ esquema grande daba ≈ 2 imágenes por segundo; en la V0.5.4 OPT, más de 30 (g
 en Windows serán distintas (las proporciones deberían mantenerse). Falta la prueba real en
 Windows, impresión y proyectos reales del usuario.
 
-## 4. Propuestas NO implementadas (requieren autorización)
+## 4. Revisión 2: manejo del ratón (pedido por el usuario)
+
+| Acción | V0.5.3 | V0.5.4 OPT (rev. 2) |
+|---|---|---|
+| Puntero, izquierdo sobre objeto | Seleccionar y mover | Igual |
+| Puntero, izquierdo en vacío + arrastrar | Desplazar la hoja | Marcar recuadro de selección |
+| Derecho + arrastrar | — | Desplazar la hoja (con zoom, cualquier herramienta) |
+| Derecho (clic) con objetos marcados | Menú de etiqueta | Borrar lo marcado (Ctrl+Z deshace) |
+| Derecho (clic) sin selección | Menú de etiqueta / cancelar trazo | Igual |
+| «Enmarcar» en el desplegable de Líneas | Sí | Retirado |
+
+Pruebas: `tests/test_enmarcar_gui.py` reescrito para este comportamiento (9 pruebas: marcar,
+cable cruzado, deseleccionar, mover grupo marcado, marcar con zoom sin desplazar, desplazar con
+el derecho, borrar con el derecho y deshacer, no borrar sin selección, cancelar trazo).
+Total: 23 pruebas correctas.
+
+## 5. Propuestas NO implementadas (requieren autorización)
 
 1. **Nitidez en pantallas con escalado de Windows (125 %, 150 %).** Python para Windows no se
    declara «DPI aware» y Windows amplía la ventana como imagen: todo (botones, textos y dibujo) se

@@ -72,6 +72,7 @@ class ElectricalWorkApp:
         self._grid_job=None
         self._grid_region=None
         self._shape_cache={}
+        self._right=None
         self._fast_zoom=False
         self._pending_quality=set()
         self._refine_job=None
@@ -127,9 +128,9 @@ class ElectricalWorkApp:
         rail.pack_propagate(False)
         self.icon_rail=rail
         self._tool_labels={
-            'select':'Puntero: arrastra para mover objetos; en vacío, desplaza la hoja (Esc)',
+            'select':'Puntero: arrastra objetos para moverlos; en vacío, arrastra para marcar varios. Botón derecho: arrastra para desplazar la hoja, clic para borrar lo marcado (Esc)',
             'select_box':'Enmarcar: mantén pulsado el botón izquierdo y arrastra para seleccionar componentes y cables',
-            'wire_group':'Líneas: recta, Enmarcar, cable a 90° y rectángulo',
+            'wire_group':'Líneas: recta, cable a 90° y rectángulo',
             'wire_straight':'Línea libre, también diagonal',
             'wire':'Cable con codo a 90°',
             'wire_rectangle':'Cuadrado / rectángulo',
@@ -148,7 +149,7 @@ class ElectricalWorkApp:
         }
         self._tool_labels.update(SYMBOL_NAMES)
         self._groups={
-            'wire_group':('wire_straight','select_box','wire','wire_rectangle'),
+            'wire_group':('wire_straight','wire','wire_rectangle'),
             'contact_group':('contact_no','contact_nc',
                              'switch_horizontal_no','switch_horizontal_nc',
                              'switch_double_horizontal',
@@ -608,7 +609,9 @@ class ElectricalWorkApp:
         self.canvas.bind('<MouseWheel>',self.on_mousewheel)
         self.canvas.bind('<Button-4>',self.on_mousewheel)
         self.canvas.bind('<Button-5>',self.on_mousewheel)
-        self.canvas.bind('<Button-3>',self.on_canvas_context)
+        self.canvas.bind('<ButtonPress-3>',self.on_right_down)
+        self.canvas.bind('<B3-Motion>',self.on_right_drag)
+        self.canvas.bind('<ButtonRelease-3>',self.on_right_up)
         self.canvas.bind('<Configure>',lambda e:self.redraw())
         self._update_properties()
 
@@ -684,7 +687,7 @@ class ElectricalWorkApp:
         self.dragging=None
         self.marquee_start=self.marquee_end=None
         descriptions={
-            'select':'Rueda para ampliar o reducir. Arrastra desde el vacío para desplazar la hoja; sobre un elemento lo mueves. Para seleccionar varios, activa Enmarcar (segunda opción de Líneas).',
+            'select':'Rueda: zoom. Botón izquierdo: sobre un elemento lo mueves; en vacío, arrastra para marcar varios. Botón derecho: arrastra para desplazar la hoja; clic para borrar lo marcado (Ctrl+Z deshace).',
             'select_box':'ENMARCAR: mantén pulsado y arrastra sobre el dibujo. No mueve la hoja y permanece activo; pulsa Esc para mover la selección con el puntero.',
             'wire':'Cable a 90°: inicio y final. Indicador verde en uniones. Espacio cambia la posición del codo.',
             'wire_straight':'Línea recta de cualquier inclinación: haz clic en inicio y final.',
@@ -741,6 +744,40 @@ class ElectricalWorkApp:
                     if any(el['id']==ident for el in self.doc['elements']):
                         return ident,key
         return None
+
+    # --- Botón derecho: arrastrar = desplazar la hoja; clic = borrar lo
+    # marcado (o el menú de etiquetas / cancelar el trazo, como antes). ---
+    _RIGHT_MOVE=4
+
+    def on_right_down(self,e):
+        if self.dragging is not None or self.marquee_start is not None:return 'break'
+        self._right={'start':(e.x,e.y),'moved':False}
+        self.canvas.scan_mark(e.x,e.y)
+        return 'break'
+
+    def on_right_drag(self,e):
+        r=self._right
+        if r is None:return 'break'
+        if not r['moved'] and max(abs(e.x-r['start'][0]),abs(e.y-r['start'][1]))>=self._RIGHT_MOVE:
+            r['moved']=True
+            self.canvas.configure(cursor='fleur')
+        if r['moved'] and self.zoom_percent>100:
+            self.canvas.scan_dragto(e.x,e.y,gain=1)
+        return 'break'
+
+    def on_right_up(self,e):
+        r=self._right
+        self._right=None
+        if r is None:return 'break'
+        if r['moved']:
+            self.canvas.configure(cursor='arrow' if self.tool=='select' else 'crosshair')
+            return 'break'
+        if self.tool=='select' and self._selection_items():
+            total=len(self._selection_items())
+            self.delete_selected()
+            self._status_var.set(f'{total} objeto(s) borrado(s). Ctrl+Z para deshacer.')
+            return 'break'
+        return self.on_canvas_context(e)
 
     def on_canvas_context(self,event):
         """Restablecer la posición de una numeración sin editar el dibujo."""
@@ -885,11 +922,10 @@ class ElectricalWorkApp:
                                    'start':(x,y), 'origin':deepcopy(wire['points']),
                                    'changed':False}
             elif hit is None:
-                # El botón izquierdo sobre el fondo mueve la vista ampliada.
-                # Nunca cambia el dibujo ni crea un recuadro accidental.
-                self.dragging={'mode':'pan','changed':False}
-                self.canvas.scan_mark(e.x,e.y)
-                self.canvas.configure(cursor='fleur')
+                # El botón izquierdo sobre el fondo marca un recuadro de
+                # selección (la hoja se desplaza con el botón derecho).
+                self.marquee_start=self._point(e)
+                self.marquee_end=self.marquee_start
             self._update_properties()
             self.redraw()
             return
@@ -1105,10 +1141,15 @@ class ElectricalWorkApp:
             # Nunca pasar a Puntero automáticamente: la siguiente pulsación
             # debe iniciar otro marco, no desplazar la hoja o mover un objeto.
             total=len(self._selection_items())
-            self._status_var.set(
-                f'Enmarcar: {total} objeto(s) seleccionado(s). Esc para moverlos.'
-                if total else 'Enmarcar: no hay objetos en el recuadro. Vuelve a arrastrar.'
-            )
+            if self.tool=='select':
+                self._status_var.set(
+                    f'{total} objeto(s) marcado(s). Arrástralos para moverlos o pulsa el botón derecho para borrarlos.'
+                    if total else 'Listo para dibujar')
+            else:
+                self._status_var.set(
+                    f'Enmarcar: {total} objeto(s) seleccionado(s). Esc para moverlos.'
+                    if total else 'Enmarcar: no hay objetos en el recuadro. Vuelve a arrastrar.'
+                )
             return 'break'
         if self.dragging and self.dragging.get('changed'):self._changed()
         self.dragging=None
@@ -1128,10 +1169,9 @@ class ElectricalWorkApp:
     def on_motion(self,e):
         x,y=self._point(e)
         self._last_cursor=(x,y)
-        if self.tool=='select' and not self.dragging:
-            # En espacio vacío se indica que se puede desplazar la vista.
-            can_pan=self.zoom_percent>100 and self._hit(e) is None
-            self.canvas.configure(cursor='fleur' if can_pan or self._hit_annotation(e) else 'arrow')
+        if self.tool=='select' and not self.dragging and self._right is None:
+            # Cursor de movimiento solo sobre una etiqueta desplazable.
+            self.canvas.configure(cursor='fleur' if self._hit_annotation(e) else 'arrow')
         if self.tool in ('wire','wire_straight','wire_rectangle'):self._draw_wire_overlay()
 
     def on_mousewheel(self,e):
@@ -1660,7 +1700,7 @@ class ElectricalWorkApp:
         cv.create_line(0,0,0,0,state='hidden',tags=('z_elements',))
         self._draw_junctions()
         self._draw_wire_overlay()
-        if self.tool=='select_box' and self.marquee_start is not None and self.marquee_end is not None:
+        if self.tool in ('select','select_box') and self.marquee_start is not None and self.marquee_end is not None:
             x1,y1=self._xy(*self.marquee_start)
             x2,y2=self._xy(*self.marquee_end)
             cv.create_rectangle(x1,y1,x2,y2,outline=TEAL,fill='#dff7f3',

@@ -194,7 +194,7 @@ def run_case(name, cols, rows, dx, dy, zoom):
     result['arrastre_grupo_soltar_ms'] = round(rel, 2)
     # Enmarcar (rectángulo de selección).
     app.selected = None; app.multi_selected.clear()
-    app._set_tool('select_box'); app.redraw(); b.flush()
+    app._set_tool('select'); app.redraw(); b.flush()
     samples, rel = b.drag((30, 40), 30, (12, 8))
     result['enmarcar'] = summary(samples)
     result['enmarcar_soltar_ms'] = round(rel, 2)
