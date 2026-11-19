@@ -1,150 +1,352 @@
 """Renderizado de pantalla suavizado de las formas vectoriales del editor.
 
 El motor geométrico y los PDF/SVG siguen siendo vectoriales; este módulo
-únicamente mejora el antialiasing en pantallas de zoom reducido. Pillow es
-opcional: cuando no está instalado la interfaz usa el Canvas clásico.
+únicamente mejora la representación en pantalla. Pillow es opcional: cuando
+no está instalado la interfaz usa el Canvas clásico.
+
+Versión optimizada (experimental):
+
+* Trazos con un único grosor entero de píxel en todo el esquema (cables y
+  símbolos) y alineados con la rejilla de píxeles: las líneas horizontales y
+  verticales salen nítidas, sin bordes borrosos, y las curvas y oblicuas
+  quedan suavizadas por sobremuestreo 4x con promedio exacto (``reduce``),
+  sin halos.
+* Textos dibujados a resolución final con el suavizado nativo de FreeType
+  (más nítidos que el texto reducido desde 4x).
+* Mapas de bits independientes de la posición: el mismo símbolo desplazado
+  reutiliza su imagen, por lo que arrastrar no vuelve a rasterizar.
+* Fuentes resueltas una sola vez y conservadas en memoria.
+
+Ninguna función modifica coordenadas del proyecto: todo el ajuste se hace
+sobre píxeles de pantalla.
 """
 from __future__ import annotations
 import math
+import os
 
 try:
-    from PIL import Image, ImageDraw, ImageFont, ImageTk
+    from PIL import Image, ImageDraw, ImageFont, ImageTk, ImageColor
     AVAILABLE = True
 except ImportError:
     AVAILABLE = False
 
 SS = 4
+# Grosor nominal (unidades de página) de cables y símbolos en pantalla.
+STROKE = 1.6
+_PAD = 4
+
+_WIN_FONTS = os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Fonts')
+_FONT_FILES = {
+    # familia: (normal, negrita) en Windows
+    'segoe ui': ('segoeui.ttf', 'segoeuib.ttf'),
+    'arial': ('arial.ttf', 'arialbd.ttf'),
+    'calibri': ('calibri.ttf', 'calibrib.ttf'),
+    'tahoma': ('tahoma.ttf', 'tahomabd.ttf'),
+    'verdana': ('verdana.ttf', 'verdanab.ttf'),
+    'times new roman': ('times.ttf', 'timesbd.ttf'),
+    'courier new': ('cour.ttf', 'courbd.ttf'),
+    'consolas': ('consola.ttf', 'consolab.ttf'),
+    'helvetica': ('arial.ttf', 'arialbd.ttf'),
+}
+_FALLBACKS = (
+    ('segoeui.ttf', 'segoeuib.ttf'), ('arial.ttf', 'arialbd.ttf'),
+    ('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+     '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'),
+    ('DejaVuSans.ttf', 'DejaVuSans-Bold.ttf'),
+)
+_font_paths = {}
+_font_objects = {}
 
 
-def _font(size, supersample=SS, bold=False, family=None):
-    # No se distribuyen fuentes con el programa: usa las del equipo.
+def stroke_px(zoom, stroke=STROKE):
+    """Grosor uniforme en píxeles enteros para la escala de pantalla."""
+    return max(1, int(round(stroke * zoom)))
+
+
+def align(value, width):
+    """Coloca el eje de un trazo ortogonal en la rejilla de píxeles."""
+    if width % 2:
+        return math.floor(value) + .5
+    return float(round(value))
+
+
+def _candidate_files(family, bold):
+    key = str(family or '').strip().lower()
     names = []
+    if key in _FONT_FILES:
+        names.append(_FONT_FILES[key][1 if bold else 0])
     if family:
         names.append(str(family))
-    if bold:
-        names += ['C:/Windows/Fonts/segoeuib.ttf', 'C:/Windows/Fonts/arialbd.ttf',
-                  '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf']
-    else:
-        names += ['C:/Windows/Fonts/segoeui.ttf', 'C:/Windows/Fonts/arial.ttf',
-                  '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf']
-    names += ['DejaVuSans.ttf', 'Arial.ttf']
+    names += [pair[1 if bold else 0] for pair in _FALLBACKS]
+    result = []
     for name in names:
-        try:
-            return ImageFont.truetype(name, max(1,int(round(size*supersample))))
-        except (OSError,ValueError):
-            continue
-    return ImageFont.load_default(size=max(1,int(round(size*supersample))))
+        if os.path.isabs(name) or os.sep in name or '/' in name:
+            result.append(name)
+        else:
+            win = os.path.join(_WIN_FONTS, name)
+            if os.path.exists(win):
+                result.append(win)
+            result.append(name)
+    return result
+
+
+def _font(size, family=None, bold=False):
+    """Fuente TrueType en caché (tamaño en píxeles, admite fracciones)."""
+    size = max(1.0, round(float(size), 2))
+    key = (family, bold, size)
+    font = _font_objects.get(key)
+    if font is not None:
+        return font
+    path_key = (family, bold)
+    path = _font_paths.get(path_key)
+    if path is None:
+        for candidate in _candidate_files(family, bold):
+            try:
+                ImageFont.truetype(candidate, 10)
+            except (OSError, ValueError):
+                continue
+            path = candidate
+            break
+        _font_paths[path_key] = path or ''
+    try:
+        font = ImageFont.truetype(path, size) if path else ImageFont.load_default(size=size)
+    except (OSError, ValueError):
+        font = ImageFont.load_default(size=size)
+    if len(_font_objects) > 400:
+        _font_objects.clear()
+    _font_objects[key] = font
+    return font
+
+
+_colors = {}
 
 
 def _color(value):
-    from PIL import ImageColor
-    try:
-        return ImageColor.getrgb(value)
-    except (TypeError, ValueError):
-        return (32,50,72)
+    rgb = _colors.get(value)
+    if rgb is None:
+        try:
+            rgb = ImageColor.getrgb(value)[:3]
+        except (TypeError, ValueError):
+            rgb = (32, 50, 72)
+        _colors[value] = rgb
+    return rgb
 
 
-def _dashed(draw, a, b, ink, width, dash=5*SS, gap=3*SS):
-    dx,dy=b[0]-a[0],b[1]-a[1]
-    length=math.hypot(dx,dy)
-    if not length:return
-    x,y=dx/length,dy/length
-    p=0.0
-    while p<length:
-        q=min(length,p+dash)
-        draw.line((a[0]+x*p,a[1]+y*p,a[0]+x*q,a[1]+y*q),fill=ink,width=width)
-        p=q+gap
+def _dashed(draw, a, b, ink, width, dash=5 * SS, gap=3 * SS):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = math.hypot(dx, dy)
+    if not length:
+        return
+    x, y = dx / length, dy / length
+    p = 0.0
+    while p < length:
+        q = min(length, p + dash)
+        draw.line((a[0] + x * p, a[1] + y * p, a[0] + x * q, a[1] + y * q), fill=ink, width=width)
+        p = q + gap
 
 
-def symbol_bitmap(shapes, zoom, ink='#21364c', stroke=1.55):
-    """Return (PIL RGBA, left, top), rasterizing lines at 4x resolution."""
-    if not AVAILABLE or not shapes:return None
-    # Bound vector primitives (including symbol-specific glyphs).
-    bounds=[]
+def shapes_key(shapes, ox, oy):
+    """Representación de las formas relativa al origen (clave de caché)."""
+    out = []
     for shape in shapes:
-        typ=shape[0]
-        if typ in ('line','dashline'):
-            bounds += [(shape[1],shape[2]),(shape[3],shape[4])]
-        elif typ in ('polygon','filledpolygon'):
-            bounds += list(shape[1])
-        elif typ in ('circle','dot'):
-            x,y,r=shape[1:4];bounds += [(x-r,y-r),(x+r,y+r)]
-        elif typ in ('text','textend','textcenter'):
-            x,y=shape[1:3]
-            size=shape[4];approx=max(12,len(str(shape[3]))*size*.7)
-            bounds += [(x-approx,y-size),(x+approx,y+size)]
-    if not bounds:return None
-    xs=[p[0]*zoom for p in bounds];ys=[p[1]*zoom for p in bounds]
-    left=math.floor(min(xs)-5);top=math.floor(min(ys)-5)
-    right=math.ceil(max(xs)+5);bottom=math.ceil(max(ys)+5)
-    w=max(1,right-left);h=max(1,bottom-top)
-    # Protect against too-large image layers on malformed elements.
-    if w*h>3_500_000:return None
-    image=Image.new('RGBA',(w*SS,h*SS),(0,0,0,0))
-    draw=ImageDraw.Draw(image)
-    linecolor=(*_color(ink),255)
-    thickness=max(2,round(stroke*zoom*SS))
-    def coord(x,y):return ((x*zoom-left)*SS,(y*zoom-top)*SS)
+        typ = shape[0]
+        if typ in ('line', 'dashline'):
+            out.append((typ, round(shape[1] - ox, 4), round(shape[2] - oy, 4),
+                        round(shape[3] - ox, 4), round(shape[4] - oy, 4)))
+        elif typ in ('polygon', 'filledpolygon'):
+            out.append((typ, tuple((round(x - ox, 4), round(y - oy, 4)) for x, y in shape[1])))
+        elif typ in ('circle', 'dot'):
+            out.append((typ, round(shape[1] - ox, 4), round(shape[2] - oy, 4), shape[3]))
+        elif typ in ('text', 'textcenter', 'textend'):
+            out.append((typ, round(shape[1] - ox, 4), round(shape[2] - oy, 4)) + tuple(shape[3:]))
+    return tuple(out)
+
+
+def origin_phase(ox, oy, zoom):
+    """Parte entera y fraccionaria (en píxeles) del origen de un elemento."""
+    gx, gy = ox * zoom, oy * zoom
+    ix, iy = math.floor(gx), math.floor(gy)
+    return ix, iy, round(gx - ix, 3), round(gy - iy, 3)
+
+
+def _text_box(shape, zoom):
+    x, y = shape[1:3]
+    size = shape[4]
+    approx = max(12, len(str(shape[3])) * size * .7)
+    return [(x - approx, y - size), (x + approx, y + size)]
+
+
+def render(shapes, zoom, ink='#21364c', width=None, origin=(0, 0), stroke=STROKE):
+    """Rasteriza formas vectoriales con suavizado.
+
+    Devuelve ``(PIL RGBA, left, top)`` donde ``left``/``top`` son relativos
+    a ``floor(origin*zoom)`` en píxeles de página (sin desplazamiento de la
+    vista). El resultado solo depende de la geometría relativa al origen y de
+    la fracción de píxel del origen, por lo que puede reutilizarse al mover.
+    """
+    if not AVAILABLE or not shapes:
+        return None
+    if width is None:
+        width = stroke_px(zoom, stroke)
+    ox, oy = origin
+    _ix, _iy, fx, fy = origin_phase(ox, oy, zoom)
+
+    def local(x, y):
+        return fx + (x - ox) * zoom, fy + (y - oy) * zoom
+
+    bounds = []
     for shape in shapes:
-        typ=shape[0]
-        if typ in ('line','dashline'):
-            a=coord(*shape[1:3]);b=coord(*shape[3:5])
-            if typ=='dashline':_dashed(draw,a,b,linecolor,thickness)
+        typ = shape[0]
+        if typ in ('line', 'dashline'):
+            bounds += [local(*shape[1:3]), local(*shape[3:5])]
+        elif typ in ('polygon', 'filledpolygon'):
+            bounds += [local(*p) for p in shape[1]]
+        elif typ in ('circle', 'dot'):
+            x, y, r = shape[1:4]
+            bounds += [local(x - r, y - r), local(x + r, y + r)]
+        elif typ in ('text', 'textend', 'textcenter'):
+            bounds += [local(*p) for p in _text_box(shape, 1)]
+    if not bounds:
+        return None
+    pad = _PAD + width
+    left = math.floor(min(p[0] for p in bounds)) - pad
+    top = math.floor(min(p[1] for p in bounds)) - pad
+    right = math.ceil(max(p[0] for p in bounds)) + pad
+    bottom = math.ceil(max(p[1] for p in bounds)) + pad
+    w = max(1, right - left)
+    h = max(1, bottom - top)
+    # Protección frente a capas desmesuradas en elementos corruptos.
+    if w * h > 3_500_000:
+        return None
+    image = Image.new('RGBA', (w * SS, h * SS), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    linecolor = (*_color(ink), 255)
+    white = (255, 255, 255, 255)
+    thick = width * SS
+
+    def px(x, y):
+        a, b = local(x, y)
+        return a - left, b - top
+
+    half = thick / 2
+
+    def bar(a, b):
+        """Tramo ortogonal (coordenadas continuas ya alineadas) como
+        rectángulo de cobertura exacta; extremos prolongados medio grosor."""
+        x1, x2 = sorted((a[0] * SS, b[0] * SS))
+        y1, y2 = sorted((a[1] * SS, b[1] * SS))
+        x1, y1, x2, y2 = (round(x1 - half), round(y1 - half),
+                          round(x2 + half), round(y2 + half))
+        draw.rectangle((x1, y1, x2 - 1, y2 - 1), fill=linecolor)
+
+    def oblique(a, b, dashed=False):
+        # Pillow toma como coordenada el centro del píxel: -0,5 en SS.
+        a = (a[0] * SS - .5, a[1] * SS - .5)
+        b = (b[0] * SS - .5, b[1] * SS - .5)
+        if dashed:
+            _dashed(draw, a, b, linecolor, thick)
+            return
+        draw.line((*a, *b), fill=linecolor, width=thick)
+        for cx, cy in (a, b):
+            draw.ellipse((cx - half, cy - half, cx + half, cy + half), fill=linecolor)
+
+    def segment(a, b, dashed=False):
+        a, b = list(a), list(b)
+        vertical = abs(a[0] - b[0]) < 1e-6
+        horizontal = abs(a[1] - b[1]) < 1e-6
+        if vertical:
+            a[0] = b[0] = align(a[0], width)
+        if horizontal:
+            a[1] = b[1] = align(a[1], width)
+        if (vertical or horizontal) and not dashed:
+            bar(a, b)
+        else:
+            oblique(a, b, dashed)
+
+    def ellipse(cx, cy, r, **kw):
+        cx, cy = cx * SS - .5, cy * SS - .5
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), **kw)
+
+    texts = []
+    for shape in shapes:
+        typ = shape[0]
+        if typ in ('line', 'dashline'):
+            segment(px(*shape[1:3]), px(*shape[3:5]), typ == 'dashline')
+        elif typ in ('polygon', 'filledpolygon'):
+            pts = [list(px(*point)) for point in shape[1]]
+            ortho = all(abs(p[0] - q[0]) < 1e-6 or abs(p[1] - q[1]) < 1e-6
+                        for p, q in zip(pts, pts[1:] + pts[:1]))
+            if ortho:
+                for p in pts:
+                    p[0] = align(p[0], width)
+                    p[1] = align(p[1], width)
+            fill = linecolor if typ == 'filledpolygon' else white
+            # Relleno opaco coherente con el Canvas clásico, el SVG y el PDF.
+            draw.polygon([(p[0] * SS - .5, p[1] * SS - .5) for p in pts], fill=fill)
+            if typ != 'filledpolygon':
+                for p, q in zip(pts, pts[1:] + pts[:1]):
+                    segment(p, q)
+        elif typ in ('circle', 'dot'):
+            x, y, r = shape[1:4]
+            cx, cy = px(x, y)
+            cx, cy = align(cx, width), align(cy, width)
+            radius = r * zoom * SS
+            if typ == 'dot':
+                ellipse(cx, cy, radius, fill=linecolor)
             else:
-                draw.line((*a,*b),fill=linecolor,width=thickness,joint='curve')
-                # Terminaciones redondeadas: evitan extremos dentados
-                # al reducir los dibujos técnicos compactos.
-                radius=thickness/2
-                for px,py in (a,b):
-                    draw.ellipse((px-radius,py-radius,px+radius,py+radius),
-                                 fill=linecolor)
-        elif typ in ('polygon','filledpolygon'):
-            pts=[coord(*point) for point in shape[1]]
-            if typ=='filledpolygon':
-                draw.polygon(pts,fill=linecolor)
-            else:
-                # Fondo opaco coherente con el Canvas clásico, el SVG y el PDF:
-                # los cables dibujados detrás no atraviesan las cajas.
-                draw.polygon(pts,fill=(255,255,255,255))
-                draw.line(pts+[pts[0]],fill=linecolor,width=thickness,joint='curve')
-        elif typ in ('circle','dot'):
-            x,y,r=shape[1:4];cx,cy=coord(x,y);radius=r*zoom*SS
-            b=(cx-radius,cy-radius,cx+radius,cy+radius)
-            draw.ellipse(b,fill=linecolor if typ=='dot' else (255,255,255,255),
-                         outline=None if typ=='dot' else linecolor,width=thickness)
-        elif typ in ('text','textcenter','textend'):
-            _,x,y,label,size,color,*family=shape
-            xx,yy=coord(x,y)
-            alignment={'text':'lm','textcenter':'mm','textend':'rm'}[typ]
-            draw.text((xx,yy),str(label),font=_font(size*zoom,family=family[0] if family else None),
-                      fill=(*_color(color),255),anchor=alignment)
-    return image.resize((w,h),Image.Resampling.LANCZOS),left,top
+                # Mismo criterio que la V0.5.3: el trazo queda dentro del radio,
+                # de modo que bornes y anillos conservan su tamaño en pantalla.
+                ellipse(cx, cy, radius, fill=white, outline=linecolor, width=thick)
+        elif typ in ('text', 'textcenter', 'textend'):
+            texts.append(shape)
+    image = image.reduce(SS)
+    if texts:
+        draw = ImageDraw.Draw(image)
+        for shape in texts:
+            typ, x, y, label, size, color, *family = shape
+            xx, yy = px(x, y)
+            draw.text((xx, yy), str(label), font=_font(size * zoom, family[0] if family else None),
+                      fill=(*_color(color), 255), anchor={'text': 'lm', 'textcenter': 'mm', 'textend': 'rm'}[typ])
+    return image, left, top
+
+
+def render_label(shape, zoom, origin=(0, 0)):
+    """Texto suavizado a resolución final: ``(PIL RGBA, left, top)``."""
+    if not AVAILABLE:
+        return None
+    typ, x, y, label, size, color, *family = shape
+    if label is None or str(label) == '':
+        return None
+    ox, oy = origin
+    _ix, _iy, fx, fy = origin_phase(ox, oy, zoom)
+    font = _font(size * zoom, family[0] if family else None)
+    anchor = {'text': 'lm', 'textcenter': 'mm', 'textend': 'rm'}[typ]
+    lx, ly = fx + (x - ox) * zoom, fy + (y - oy) * zoom
+    probe = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
+    x1, y1, x2, y2 = probe.textbbox((lx, ly), str(label), font=font, anchor=anchor)
+    left = math.floor(x1) - 2
+    top = math.floor(y1) - 2
+    w = max(2, math.ceil(x2) + 2 - left)
+    h = max(2, math.ceil(y2) + 2 - top)
+    img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(img).text((lx - left, ly - top), str(label), font=font,
+                             fill=(*_color(color), 255), anchor=anchor)
+    return img, left, top
+
+
+# --- Compatibilidad con la API de la V0.5.3 (coordenadas absolutas) ---------
+
+def symbol_bitmap(shapes, zoom, ink='#21364c', stroke=STROKE):
+    """Return (PIL RGBA, left, top) en píxeles de página absolutos."""
+    result = render(shapes, zoom, ink, stroke=stroke)
+    return result
 
 
 def label_bitmap(shape, zoom):
-    """Return high-quality raster text and its top-left offset from anchor."""
-    if not AVAILABLE:return None
-    typ,x,y,label,size,color,*family=shape
-    if not label:return None
-    # Size in the source is a page-space unit. Avoid Canvas's 8pt text floor.
-    font=_font(size*zoom,family=family[0] if family else None)
-    anchor={'text':'lm','textcenter':'mm','textend':'rm'}[typ]
-    check=Image.new('RGBA',(2,2))
-    d=ImageDraw.Draw(check)
-    bounds=d.textbbox((0,0),str(label),font=font,anchor=anchor)
-    x1,y1,x2,y2=bounds
-    pad=3*SS
-    w=max(2,int(x2-x1+2*pad));h=max(2,int(y2-y1+2*pad))
-    img=Image.new('RGBA',(w,h),(0,0,0,0))
-    d=ImageDraw.Draw(img)
-    d.text((-x1+pad,-y1+pad),str(label),font=font,
-           fill=(*_color(color),255),anchor=anchor)
-    small=img.resize((max(1,math.ceil(w/SS)),max(1,math.ceil(h/SS))),Image.Resampling.LANCZOS)
-    left=x*zoom + (x1-pad)/SS
-    top=y*zoom + (y1-pad)/SS
-    return small,left,top
+    return render_label(shape, zoom)
 
 
 def to_tk(bitmap):
-    if not AVAILABLE:return None
+    if not AVAILABLE:
+        return None
     return ImageTk.PhotoImage(bitmap)

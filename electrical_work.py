@@ -65,6 +65,10 @@ class ElectricalWorkApp:
         self._image_refs=[]
         self._quality_images=[]
         self._symbol_cache=OrderedDict()
+        self._cache_pixels=0
+        self._static_key=None
+        self._image_cache=OrderedDict()
+        self._title_fit_cache={}
         self._documentation_window=None
         # El 100% es el tamaño que permite ver la hoja completa.
         # self.zoom se usa únicamente como escala efectiva de dibujo.
@@ -1003,7 +1007,7 @@ class ElectricalWorkApp:
                     if not offsets:item.pop('annotation_offsets',None)
                 else:
                     offsets[d['key']]=position
-                self.redraw()
+                self._refresh_items([d['id']])
             return
         if d.get('mode')=='wire':
             x,y=self._page_point(e)
@@ -1022,7 +1026,7 @@ class ElectricalWorkApp:
                 if not d['changed']:
                     self._history();d['changed']=True
                 current['points']=shifted
-                self.redraw()
+                self._refresh_items((),[d['id']])
             return
         if d.get('mode')=='group':
             x,y=self._page_point(e)
@@ -1037,6 +1041,7 @@ class ElectricalWorkApp:
             if step_dx==0 and step_dy==0:return
             if not d['changed']:
                 self._history(); d['changed']=True
+            before=self._wire_snapshot()
             # Primero mover cables seleccionados para que los extremos ya no
             # coincidan con los puertos antiguos y no se dupliquen ajustes.
             for typ,ident in d['items']:
@@ -1050,7 +1055,8 @@ class ElectricalWorkApp:
                 if el is not None:
                     move_element(self.doc,ident,el['x']+step_dx,el['y']+step_dy)
             d['prev']=(d['prev'][0]+step_dx,d['prev'][1]+step_dy)
-            self.redraw()
+            self._refresh_items([ident for typ,ident in d['items'] if typ=='element'],
+                                [ident for typ,ident in d['items'] if typ=='wire'],before)
             return
         x,y=self._page_point(e)
         dx,dy=x-d['start'][0],y-d['start'][1]
@@ -1061,8 +1067,9 @@ class ElectricalWorkApp:
             if not d['changed']:
                 self._history()
                 d['changed']=True
+            before=self._wire_snapshot()
             move_element(self.doc,d['id'],new_x,new_y)
-            self.redraw()
+            self._refresh_items([d['id']],(),before)
     def on_canvas_up(self,e):
         if self.dragging and self.dragging.get('mode')=='pan':
             self.dragging=None
@@ -1213,24 +1220,34 @@ class ElectricalWorkApp:
     def _draw_image(self,item):
         """Imagen en segundo plano; referencias Tk conservadas hasta el redraw siguiente."""
         try:
-            data=base64.b64decode(item['image_data'])
             w=max(1,round(item['width']*self.zoom))
             h=max(1,round(item['height']*self.zoom))
-            try:
-                from PIL import Image,ImageTk
-                im=Image.open(io.BytesIO(data)).convert('RGBA')
-                im.thumbnail((w,h),Image.Resampling.LANCZOS)
-                photo=ImageTk.PhotoImage(im,master=self.root)
-            except ImportError:
-                photo=tk.PhotoImage(data=item['image_data'],master=self.root)
-                factor=max(1,math.ceil(max(photo.width()/w,photo.height()/h)))
-                if factor>1:photo=photo.subsample(factor,factor)
+            # La imagen ya escalada se conserva: arrastrar o seleccionar no
+            # vuelve a decodificar ni a reescalar la imagen original.
+            key=(item['id'],w,h,hash(item['image_data']))
+            photo=self._image_cache.get(key)
+            if photo is None:
+                data=base64.b64decode(item['image_data'])
+                try:
+                    from PIL import Image,ImageTk
+                    im=Image.open(io.BytesIO(data)).convert('RGBA')
+                    im.thumbnail((w,h),Image.Resampling.LANCZOS)
+                    photo=ImageTk.PhotoImage(im,master=self.root)
+                except ImportError:
+                    photo=tk.PhotoImage(data=item['image_data'],master=self.root)
+                    factor=max(1,math.ceil(max(photo.width()/w,photo.height()/h)))
+                    if factor>1:photo=photo.subsample(factor,factor)
+                self._image_cache[key]=photo
+                while len(self._image_cache)>48:
+                    self._image_cache.popitem(last=False)
+            else:
+                self._image_cache.move_to_end(key)
             self._image_refs.append(photo)
             self.canvas.create_image(*self._xy(item['x'],item['y']),image=photo,
-                anchor='center',tags=('drawing',f'element:{item["id"]}'))
+                anchor='center',tags=('drawing',f'element:{item["id"]}','image-picture'))
         except (OSError,ValueError,tk.TclError):
             self.canvas.create_text(*self._xy(item['x'],item['y']),text='[Imagen no disponible]',
-                 fill='#ab2534',tags=('drawing',f'element:{item["id"]}'))
+                 fill='#ab2534',tags=('drawing',f'element:{item["id"]}','image-picture'))
 
     def _edit_plc_signal_dialog(self,item):
         """Edición independiente de dirección (I0.0) y tipo (DI)."""
@@ -1276,44 +1293,207 @@ class ElectricalWorkApp:
             messagebox.showwarning('Imagen','La altura excede el límite.',parent=self.root);return
         self._history();item['width']=nw;item['height']=nh;self._changed()
 
+    # ------------------------------------------------------------------
+    # Motor de dibujo optimizado (experimental).
+    # * Caché LRU limitada por píxeles e independiente de la posición: un
+    #   símbolo desplazado reutiliza su imagen suavizada.
+    # * Capa estática (papel, rejilla, marco y cajetín) que solo se rehace
+    #   cuando cambian zoom, tamaño de la vista, título u hojas.
+    # * Redibujado parcial durante los arrastres: solo los objetos movidos y
+    #   los cables cuya geometría cambia.
+    # ------------------------------------------------------------------
+    _CACHE_PIXELS=24_000_000
+
     def _raster_photo(self, key, factory):
-        """Reuse high-DPI antialiased bitmaps across redraws and drags."""
-        if key in self._symbol_cache:
-            result=self._symbol_cache.pop(key)
-            self._symbol_cache[key]=result
-            return result
+        """Imagen suavizada en caché: (PhotoImage, left, top, píxeles)."""
+        entry=self._symbol_cache.get(key)
+        if entry is not None:
+            self._symbol_cache.move_to_end(key)
+            return entry
         result=factory()
         if result is None:return None
         img,left,top=result
-        photo=quality_render.to_tk(img)
-        entry=(photo,left,top)
+        entry=(quality_render.to_tk(img),left,top,img.width*img.height)
         self._symbol_cache[key]=entry
-        while len(self._symbol_cache)>220:
-            self._symbol_cache.popitem(last=False)
+        self._cache_pixels+=entry[3]
+        while self._cache_pixels>self._CACHE_PIXELS and len(self._symbol_cache)>1:
+            _,old=self._symbol_cache.popitem(last=False)
+            self._cache_pixels-=old[3]
         return entry
 
-    def _draw_quality_symbol(self, shapes, tags, color):
+    def _place_raster(self,entry,ix,iy,tags):
+        photo,left,top,_=entry
+        self._quality_images.append(photo)
+        return self.canvas.create_image(self._offset_x+ix+left,self._offset_y+iy+top,
+                                        image=photo,anchor='nw',tags=tags)
+
+    def _draw_quality_symbol(self, shapes, tags, color, origin=(0,0)):
         if not shapes:return
-        key=('body',round(self.zoom,5),color,repr(shapes))
-        result=self._raster_photo(key,lambda:quality_render.symbol_bitmap(shapes,self.zoom,color))
-        if result is None:
+        ox,oy=origin
+        ix,iy,fx,fy=quality_render.origin_phase(ox,oy,self.zoom)
+        width=quality_render.stroke_px(self.zoom)
+        key=('body',round(self.zoom,6),color,width,fx,fy,quality_render.shapes_key(shapes,ox,oy))
+        entry=self._raster_photo(key,lambda:quality_render.render(shapes,self.zoom,color,width,origin))
+        if entry is None:
             for shape in shapes:self._draw_shape(shape,tags,color)
             return
-        photo,xx,yy=result
-        self._quality_images.append(photo)
-        self.canvas.create_image(self._offset_x+xx,self._offset_y+yy,image=photo,
-                                 anchor='nw',tags=tags)
+        self._place_raster(entry,ix,iy,tags)
 
-    def _draw_quality_label(self, shape, tags):
-        key=('label',round(self.zoom,5),repr(shape))
-        result=self._raster_photo(key,lambda:quality_render.label_bitmap(shape,self.zoom))
-        if result is None:
+    def _draw_quality_label(self, shape, tags, origin=(0,0)):
+        ox,oy=origin
+        ix,iy,fx,fy=quality_render.origin_phase(ox,oy,self.zoom)
+        key=('label',round(self.zoom,6),fx,fy,quality_render.shapes_key([shape],ox,oy))
+        entry=self._raster_photo(key,lambda:quality_render.render_label(shape,self.zoom,origin))
+        if entry is None:
             self._draw_shape(shape,tags)
             return
-        photo,xx,yy=result
-        self._quality_images.append(photo)
-        self.canvas.create_image(self._offset_x+xx,self._offset_y+yy,image=photo,
-                                 anchor='nw',tags=tags)
+        self._place_raster(entry,ix,iy,tags)
+
+    def _crisp_polyline(self,points,width,color,tags=()):
+        """Trazo ortogonal nítido: cada tramo es un rectángulo de píxeles exactos.
+
+        Los ejes se alinean igual que en las imágenes suavizadas, de modo que
+        cables y bornes de los símbolos coinciden píxel a píxel. Devuelve
+        False si hay algún tramo oblicuo (lo dibuja quien llama).
+        """
+        screen=[self._xy(x,y) for x,y in points]
+        if any(abs(a[0]-b[0])>1e-6 and abs(a[1]-b[1])>1e-6 for a,b in zip(screen,screen[1:])):
+            return False
+        half=width/2
+        align=quality_render.align
+        for (ax,ay),(bx,by) in zip(screen,screen[1:]):
+            if abs(ay-by)<=1e-6:
+                c=align(ay,width)
+                x1=align(min(ax,bx),width)-half;x2=align(max(ax,bx),width)+half
+                self.canvas.create_rectangle(x1,c-half,x2,c+half,fill=color,outline='',tags=tags)
+            else:
+                c=align(ax,width)
+                y1=align(min(ay,by),width)-half;y2=align(max(ay,by),width)+half
+                self.canvas.create_rectangle(c-half,y1,c+half,y2,fill=color,outline='',tags=tags)
+        return True
+
+    def _draw_wire(self,wire):
+        cv=self.canvas
+        wid=wire['id']
+        sel=self.selected==('wire',wid) or ('wire',wid) in self.multi_selected
+        color=TEAL if sel else INK
+        tags=('drawing',f'wire:{wid}')
+        pts=wire['points']
+        if quality_render.AVAILABLE:
+            width=quality_render.stroke_px(self.zoom)
+            if not self._crisp_polyline(pts,width,color,tags):
+                shapes=[('line',a[0],a[1],b[0],b[1]) for a,b in zip(pts,pts[1:])]
+                self._draw_quality_symbol(shapes,tags,color,origin=tuple(pts[0]))
+        else:
+            points=[]
+            for px,py in pts:points.extend(self._xy(px,py))
+            cv.create_line(points,fill=color,width=max(1.0,1.65*self.zoom),
+                         capstyle='round',joinstyle='round',tags=tags)
+        if sel:
+            for a,b in (pts[0],pts[-1]):
+                xp,yp=self._xy(a,b)
+                cv.create_oval(xp-4,yp-4,xp+4,yp+4,fill=TEAL,outline='white',tags=tags)
+
+    def _selection_box(self,item):
+        xp,yp=self._xy(item['x'],item['y'])
+        if item['kind']=='image':
+            hw=item['width']*self.zoom/2;hh=item['height']*self.zoom/2
+            return (xp-hw-3,yp-hh-3,xp+hw+3,yp+hh+3)
+        if item['kind']=='plc_module':
+            pts=port_positions(item)
+            geo=plc_geometry(item)
+            factor=item.get('draw_scale',1.0)
+            left=min([item['x']+geo['left']*factor]+[xx for xx,yy in pts]);right=max([item['x']+geo['right']*factor]+[xx for xx,yy in pts])
+            top=min([item['y']+geo['top']*factor]+[yy for xx,yy in pts])
+            bottom=max(item['y']+geo['bottom']*factor,max(yy for xx,yy in pts))
+            x1,y1=self._xy(left-8,top-8);x2,y2=self._xy(right+8,bottom+8)
+            return (x1,y1,x2,y2)
+        if item['kind']=='selector_multi':
+            # Cubrir todas las posiciones, no solo el centro del mando.
+            pts=port_positions(item)
+            x1,y1=self._xy(min(a for a,b in pts)-16,min(b for a,b in pts)-14)
+            x2,y2=self._xy(max(a for a,b in pts)+16,max(b for a,b in pts)+14)
+            return (x1,y1,x2,y2)
+        if item['kind']=='breaker_4p':
+            # Marco de selección según sus ocho bornes (no cortar los extremos).
+            pts=port_positions(item)
+            x1,y1=self._xy(min(a for a,b in pts)-35,min(b for a,b in pts)-10)
+            x2,y2=self._xy(max(a for a,b in pts)+20,max(b for a,b in pts)+10)
+            return (x1,y1,x2,y2)
+        radius=46*self.zoom*item.get('draw_scale',1.0) if item['kind']!='text' else 12
+        return (xp-radius*.5,yp-radius,xp+radius*1.6,yp+radius)
+
+    def _draw_element(self,item,with_image=False):
+        cv=self.canvas
+        selected=self.selected==('element',item['id']) or ('element',item['id']) in self.multi_selected
+        tags=('drawing',f'element:{item["id"]}')
+        if with_image and item['kind']=='image':
+            self._draw_image(item)
+        if selected:
+            cv.create_rectangle(*self._selection_box(item),outline='#81d5d1',dash=(4,3),width=1.5,tags=tags)
+        if item['kind']=='image':return
+        body=symbol_shapes(item,include_annotations=False)
+        ink=TEAL if selected else INK
+        origin=(item['x'],item['y'])
+        if quality_render.AVAILABLE:
+            self._draw_quality_symbol(body,tags,ink,origin)
+        else:
+            for shape in body:self._draw_shape(shape,tags,ink)
+        for key,shape in annotation_positions(item):
+            labeltags=tags+(f'annotation:{item["id"]}:{key}',)
+            if quality_render.AVAILABLE:
+                self._draw_quality_label(shape,labeltags,origin)
+            else:
+                self._draw_shape(shape,labeltags,ink)
+
+    def _draw_junctions(self):
+        cv=self.canvas
+        radius=max(2.6,3.7*self.zoom)
+        for x,y in junction_points(self.doc):
+            if quality_render.AVAILABLE:
+                self._draw_quality_symbol([('dot',x,y,radius/self.zoom)],('junction-dot',),INK,(x,y))
+            else:
+                px,py=self._xy(x,y)
+                cv.create_oval(px-radius,py-radius,px+radius,py+radius,
+                    fill=INK,outline=INK,tags=('junction-dot',))
+
+    def _wire_snapshot(self):
+        return {w['id']:[tuple(p) for p in w['points']] for w in self.doc['wires']}
+
+    def _refresh_items(self,element_ids=(),wire_ids=(),snapshot=None):
+        """Redibujado parcial: solo elementos/cables indicados (y los cables
+        cuya geometría cambió respecto a ``snapshot``) más los puntos de unión.
+        El resultado es el mismo que un redibujado completo; al soltar el
+        ratón se hace igualmente un redibujado completo."""
+        cv=self.canvas
+        if not cv.find_withtag('z_elements'):
+            self.redraw();return
+        wire_ids=set(wire_ids)
+        if snapshot is not None:
+            for w in self.doc['wires']:
+                if snapshot.get(w['id'])!=[tuple(p) for p in w['points']]:
+                    wire_ids.add(w['id'])
+        if wire_ids:
+            byid={w['id']:w for w in self.doc['wires']}
+            for wid in wire_ids:
+                cv.delete(f'wire:{wid}')
+                wire=byid.get(wid)
+                if wire is not None:
+                    self._draw_wire(wire)
+                    cv.tag_lower(f'wire:{wid}','z_wires')
+        if element_ids:
+            byid={e['id']:e for e in self.doc['elements']}
+            for eid in element_ids:
+                tag=f'element:{eid}'
+                cv.delete(tag)
+                item=byid.get(eid)
+                if item is None:continue
+                self._draw_element(item,with_image=True)
+                cv.tag_lower(tag,'z_elements')
+                if item['kind']=='image':
+                    cv.tag_lower(f'image-picture&&{tag}','z_images')
+        cv.delete('junction-dot')
+        self._draw_junctions()
 
     def _draw_shape(self,shape,tags=(), color=INK,width=2):
         typ=shape[0]
@@ -1340,7 +1520,6 @@ class ElectricalWorkApp:
     def redraw(self):
         if not hasattr(self,'canvas'):return
         cv=self.canvas
-        cv.delete('all')
         # Ocultar scrollbars cuando cabe TODA la hoja aumenta el área útil.
         show_scrollbars=self.zoom_percent>100
         if self._scrollbars_visible != show_scrollbars:
@@ -1361,95 +1540,59 @@ class ElectricalWorkApp:
         self.zoom=fit*self.zoom_percent/100.0
         width_px=PAGE_W*self.zoom
         height_px=paper_h*self.zoom
-        self._offset_x=max(0.0,(cw-width_px)/2)
-        self._offset_y=max(0.0,(ch-height_px)/2)
-        cv.configure(scrollregion=(0,0,max(cw,width_px+8),max(ch,height_px+8)))
-        x0,y0=self._xy(0,0)
-        x1,y1=self._xy(PAGE_W,paper_h)
-        cv.create_rectangle(x0+3,y0+3,x1+3,y1+3,fill='#d5dfe8',outline='')
-        cv.create_rectangle(x0,y0,x1,y1,fill='white',outline='#bacbd7',width=1)
+        # Desplazamiento entero: la hoja queda alineada con los píxeles.
+        self._offset_x=float(round(max(0.0,(cw-width_px)/2)))
+        self._offset_y=float(round(max(0.0,(ch-height_px)/2)))
+        region=(0,0,max(cw,width_px+8),max(ch,height_px+8))
         # Visual guide every 20 units at 100%, fine 10-unit grid at high zoom.
         # Magnetic snapping always uses the exact 10-unit geometry.
         visual_grid=GRID if self.zoom_percent>=145 else GRID*2
-        for x in range(0,PAGE_W+1,visual_grid):
-            for y in range(0,PAGE_H+1,visual_grid):
-                px,py=self._xy(x,y)
-                cv.create_oval(px-.7,py-.7,px+.7,py+.7,fill='#dee6eb',outline='')
-        self._draw_sheet()
+        static_key=(cw,ch,self.zoom,visual_grid,self.doc['title'],self.sheet_index,
+                    len(self.project['sheets']))
+        if static_key!=self._static_key or not cv.find_withtag('static'):
+            cv.delete('all')
+            cv.configure(scrollregion=region)
+            self._draw_static(paper_h,visual_grid)
+            self._static_key=static_key
+        else:
+            # Solo se rehace el dibujo; papel, rejilla, marco y cajetín se conservan.
+            cv.delete('dyn','wire-overlay','selection-marquee')
         self._image_refs=[]
         self._quality_images=[]
 
         for item in self.doc['elements']:
             if item['kind']=='image':self._draw_image(item)
+        cv.create_line(0,0,0,0,state='hidden',tags=('z_images',))
         for wire in self.doc['wires']:
-            sel=self.selected==('wire',wire['id']) or ('wire',wire['id']) in self.multi_selected
-            points=[]
-            for px,py in wire['points']:points.extend(self._xy(px,py))
-            color=TEAL if sel else INK
-            stroke=max(1.0,1.65*self.zoom)
-            cv.create_line(points,fill=color,width=stroke,
-                         capstyle='round',joinstyle='round',tags=('drawing',f'wire:{wire["id"]}'))
-            if sel:
-                for a,b in (wire['points'][0],wire['points'][-1]):
-                    xp,yp=self._xy(a,b)
-                    cv.create_oval(xp-4,yp-4,xp+4,yp+4,fill=TEAL,outline='white',tags=('drawing',f'wire:{wire["id"]}'))
+            self._draw_wire(wire)
+        cv.create_line(0,0,0,0,state='hidden',tags=('z_wires',))
         for item in self.doc['elements']:
-            selected=self.selected==('element',item['id']) or ('element',item['id']) in self.multi_selected
-            tags=('drawing',f'element:{item["id"]}')
-            if selected:
-                xp,yp=self._xy(item['x'],item['y'])
-                if item['kind']=='image':
-                    hw=item['width']*self.zoom/2;hh=item['height']*self.zoom/2
-                    box=(xp-hw-3,yp-hh-3,xp+hw+3,yp+hh+3)
-                elif item['kind']=='plc_module':
-                    pts=port_positions(item)
-                    geo=plc_geometry(item)
-                    factor=item.get('draw_scale',1.0)
-                    left=min([item['x']+geo['left']*factor]+[xx for xx,yy in pts]);right=max([item['x']+geo['right']*factor]+[xx for xx,yy in pts])
-                    top=min([item['y']+geo['top']*factor]+[yy for xx,yy in pts])
-                    bottom=max(item['y']+geo['bottom']*factor,max(yy for xx,yy in pts))
-                    x1,y1=self._xy(left-8,top-8);x2,y2=self._xy(right+8,bottom+8)
-                    box=(x1,y1,x2,y2)
-                elif item['kind']=='selector_multi':
-                    # Cubrir todas las posiciones, no solo el centro del mando.
-                    pts=port_positions(item)
-                    x1,y1=self._xy(min(a for a,b in pts)-16,min(b for a,b in pts)-14)
-                    x2,y2=self._xy(max(a for a,b in pts)+16,max(b for a,b in pts)+14)
-                    box=(x1,y1,x2,y2)
-                elif item['kind']=='breaker_4p':
-                    # Marco de selección según sus ocho bornes (no cortar los extremos).
-                    pts=port_positions(item)
-                    x1,y1=self._xy(min(a for a,b in pts)-35,min(b for a,b in pts)-10)
-                    x2,y2=self._xy(max(a for a,b in pts)+20,max(b for a,b in pts)+10)
-                    box=(x1,y1,x2,y2)
-                else:
-                    radius=46*self.zoom*item.get('draw_scale',1.0) if item['kind']!='text' else 12
-                    box=(xp-radius*.5,yp-radius,xp+radius*1.6,yp+radius)
-                cv.create_rectangle(*box,outline='#81d5d1',dash=(4,3),width=1.5,tags=tags)
-            if item['kind']!='image':
-                body=symbol_shapes(item,include_annotations=False)
-                ink=TEAL if selected else INK
-                if quality_render.AVAILABLE:
-                    self._draw_quality_symbol(body,tags,ink)
-                else:
-                    for shape in body:self._draw_shape(shape,tags,ink)
-                for key,shape in annotation_positions(item):
-                    labeltags=tags+(f'annotation:{item["id"]}:{key}',)
-                    if quality_render.AVAILABLE:
-                        self._draw_quality_label(shape,labeltags)
-                    else:
-                        self._draw_shape(shape,labeltags,ink)
-        for x,y in junction_points(self.doc):
-            px,py=self._xy(x,y)
-            radius=max(2.6,3.7*self.zoom)
-            cv.create_oval(px-radius,py-radius,px+radius,py+radius,
-                fill=INK,outline=INK,tags=('junction-dot',))
+            self._draw_element(item)
+        cv.create_line(0,0,0,0,state='hidden',tags=('z_elements',))
+        self._draw_junctions()
         self._draw_wire_overlay()
         if self.tool=='select_box' and self.marquee_start is not None and self.marquee_end is not None:
             x1,y1=self._xy(*self.marquee_start)
             x2,y2=self._xy(*self.marquee_end)
             cv.create_rectangle(x1,y1,x2,y2,outline=TEAL,fill='#dff7f3',
                  stipple='gray25',dash=(5,3),width=1.5,tags=('selection-marquee',))
+        # Todo lo creado tras la capa estática pertenece a la capa dinámica.
+        cv.addtag_withtag('dyn','all')
+        cv.dtag('static','dyn')
+
+    def _draw_static(self,paper_h,visual_grid):
+        cv=self.canvas
+        x0,y0=self._xy(0,0)
+        x1,y1=self._xy(PAGE_W,paper_h)
+        tags=('static',)
+        cv.create_rectangle(x0+3,y0+3,x1+3,y1+3,fill='#d5dfe8',outline='',tags=tags)
+        cv.create_rectangle(x0,y0,x1,y1,fill='white',outline='#bacbd7',width=1,tags=tags)
+        for x in range(0,PAGE_W+1,visual_grid):
+            for y in range(0,PAGE_H+1,visual_grid):
+                px,py=self._xy(x,y)
+                cv.create_oval(px-.7,py-.7,px+.7,py+.7,fill='#dee6eb',outline='',tags=tags)
+        self._draw_sheet()
+        cv.addtag_withtag('static','all')
 
     def _draw_wire_overlay(self):
         """Rastro de cable y señal visual al llegar a puerto o cable existente."""
@@ -1490,12 +1633,12 @@ class ElectricalWorkApp:
         # Zonas impresas: A-H en la parte superior e inferior, 1-5 en ambos
         # laterales. La misma geometría se exporta a SVG (futuro PDF A4).
         geo=guide_geometry(PAGE_W)
+        frame_w=quality_render.stroke_px(self.zoom,1.4)
         for a,b,c,d in (geo['outer'],geo['inner']):
-            cv.create_rectangle(*self._xy(a,b),*self._xy(c,d),
-                                outline=GREEN,width=max(1,1.4*self.zoom))
+            self._crisp_polyline([(a,b),(c,b),(c,d),(a,d),(a,b)],frame_w,GREEN)
         for a,b,c,d in geo['lines']:
-            cv.create_line(*self._xy(a,b),*self._xy(c,d),
-                           fill=GREEN,width=max(1,1.4*self.zoom))
+            if not self._crisp_polyline([(a,b),(c,d)],frame_w,GREEN):
+                cv.create_line(*self._xy(a,b),*self._xy(c,d),fill=GREEN,width=frame_w)
         for x,y,label in geo['labels']:
             cv.create_text(*self._xy(x,y),text=label,fill=GREEN,
                            font=(FONT,max(9,round(12*self.zoom)),'bold'))
@@ -1505,16 +1648,21 @@ class ElectricalWorkApp:
         cv=self.canvas
         box=title_block_geometry()
         left,top,right,bottom=box['outer']
-        cv.create_rectangle(*self._xy(left,top),*self._xy(right,bottom),
-                            fill='white',outline='#a6c6d1',width=1.2)
-        cv.create_line(*self._xy(left,box['header_y']),*self._xy(right,box['header_y']),fill='#a6c6d1')
-        cv.create_line(*self._xy(box['divider_x'],top),*self._xy(box['divider_x'],bottom),fill='#a6c6d1')
+        cv.create_rectangle(*self._xy(left,top),*self._xy(right,bottom),fill='white',outline='')
+        self._crisp_polyline([(left,top),(right,top),(right,bottom),(left,bottom),(left,top)],1,'#a6c6d1')
+        self._crisp_polyline([(left,box['header_y']),(right,box['header_y'])],1,'#a6c6d1')
+        self._crisp_polyline([(box['divider_x'],top),(box['divider_x'],bottom)],1,'#a6c6d1')
         title=self.doc['title']
-        title_size=15
-        while title_size>9:
-            f=tkfont.Font(family=FONT,size=max(7,int(title_size*self.zoom)),weight='bold')
-            if f.measure(title)<=box['title_max_width']*self.zoom:break
-            title_size-=1
+        fit_key=(title,round(self.zoom,6))
+        title_size=self._title_fit_cache.get(fit_key)
+        if title_size is None:
+            title_size=15
+            while title_size>9:
+                f=tkfont.Font(family=FONT,size=max(7,int(title_size*self.zoom)),weight='bold')
+                if f.measure(title)<=box['title_max_width']*self.zoom:break
+                title_size-=1
+            if len(self._title_fit_cache)>64:self._title_fit_cache.clear()
+            self._title_fit_cache[fit_key]=title_size
         for text,x,y,size,fg,bold in [
             ('ELECTRICAL WORK  ·  TÍTULO DEL PLANO',box['left_center_x'],box['header_center_y'],10,MUTED,False),
             (title,box['left_center_x'],box['value_center_y'],title_size,INK,True),

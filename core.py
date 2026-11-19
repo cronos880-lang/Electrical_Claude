@@ -582,11 +582,19 @@ def junction_points(doc):
         for endpoint in (tuple(wire['points'][0]),tuple(wire['points'][-1])):
             endpoints.setdefault(endpoint,set()).add(wire['id'])
     result=set()
+    # Caja envolvente de cada cable: descarta sin cálculo los cables que no
+    # pueden contener el punto (mismo resultado, mucho menos trabajo).
+    boxes=[]
+    for wire in doc['wires']:
+        xs=[p[0] for p in wire['points']];ys=[p[1] for p in wire['points']]
+        boxes.append((min(xs),max(xs),min(ys),max(ys),wire))
     for point,owners in endpoints.items():
         if len(owners)>=3:
             result.add(point)
             continue
-        for wire in doc['wires']:
+        px,py=point
+        for x1,x2,y1,y2,wire in boxes:
+            if px<x1 or px>x2 or py<y1 or py>y2:continue
             if wire['id'] in owners:continue
             if any(point_on_segment(point,a,b,strict=True)
                    for a,b in zip(wire['points'],wire['points'][1:])):
