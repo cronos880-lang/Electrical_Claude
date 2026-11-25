@@ -520,12 +520,19 @@ class ElectricalWorkApp:
         actions.pack(side='right',padx=(0,12),pady=9)
         for name,command,bg in [
             ('Nuevo',self.new_file,NAVY2),('Abrir',self.open_file,NAVY2),
-            ('Guardar',self.save_file,TEAL),('Documentación',self.open_documentation,NAVY2),
+            ('Guardar',self.save_file,TEAL),('Guardar como',self.save_as,NAVY2),
+            ('Documentación',self.open_documentation,NAVY2),
             ('Exportar PDF',self.export_pdf_dialog,NAVY2),
             ('Salir',self.on_close,NAVY2)]:
             btn=self._btn(actions,name,command,bg=bg,padx=10,pady=6)
             btn.config(font=self._semi(9))
             btn.pack(side='left',padx=3)
+            if name=='Guardar':
+                self.save_button=btn
+                self._bind_tip(btn,'Guardar en el archivo abierto  ·  Ctrl+S')
+            elif name=='Guardar como':
+                self.save_as_button=btn
+                self._bind_tip(btn,'Guardar con otro nombre o en otra carpeta  ·  Ctrl+Mayús+S')
 
         base=tk.Frame(self.root,bg=BG)
         self._icon_base=base
@@ -2626,8 +2633,14 @@ class ElectricalWorkApp:
         self._status_var.set('Proyecto abierto: '+os.path.basename(name))
 
     def save_as(self):
-        name=filedialog.asksaveasfilename(parent=self.root,title='Guardar proyecto',
-               defaultextension='.ework',filetypes=[('Electrical Work','*.ework')])
+        options={}
+        if self.filepath:
+            # Propone la carpeta y el nombre del archivo abierto.
+            options={'initialdir':os.path.dirname(os.path.abspath(self.filepath)),
+                     'initialfile':os.path.basename(self.filepath)}
+        name=filedialog.asksaveasfilename(parent=self.root,
+               title='Guardar como' if self.filepath else 'Guardar proyecto',
+               defaultextension='.ework',filetypes=[('Electrical Work','*.ework')],**options)
         if not name:return False
         return self._save_to(name)
 

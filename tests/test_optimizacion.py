@@ -289,6 +289,27 @@ class PartialRedrawGUI(unittest.TestCase):
         self.assertNotIn('cero', [w['id'] for w in self.app.doc['wires']])
         self.assertIn('corregidos', self.app._status_var.get())
 
+    def test_save_and_save_as_buttons(self):
+        import electrical_work
+        self.assertEqual(self.app.save_as_button.cget('text'), 'Guardar como')
+        with tempfile.TemporaryDirectory() as tmp:
+            first = str(Path(tmp) / 'uno.ework')
+            second = str(Path(tmp) / 'dos.ework')
+            asked = []
+            original = electrical_work.filedialog.asksaveasfilename
+            electrical_work.filedialog.asksaveasfilename = lambda **kw: (asked.append(kw), first if len(asked) == 1 else second)[1]
+            try:
+                self.assertTrue(self.app.save_file())          # primera vez: pregunta
+                self.assertTrue(self.app.save_file())          # después: directo
+                self.assertEqual(len(asked), 1)
+                self.app.save_as_button.invoke()               # Guardar como: pregunta
+                self.assertEqual(len(asked), 2)
+                self.assertEqual(asked[1]['initialfile'], 'uno.ework')
+            finally:
+                electrical_work.filedialog.asksaveasfilename = original
+            self.assertEqual(self.app.filepath, second)
+            self.assertTrue(Path(first).exists() and Path(second).exists())
+
     def test_static_layer_kept_and_rebuilt_on_zoom(self):
         cv = self.app.canvas
         static = cv.find_withtag('static')

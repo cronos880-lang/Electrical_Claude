@@ -60,6 +60,14 @@ REVISIÓN 5 (pedido del usuario)
 - Zoom: la casilla muestra el porcentaje redondeado (71 en vez de 71.178)
   y al pulsarla se marca todo el número: lo que se escriba lo sustituye.
 
+REVISIÓN 7: BOTÓN «GUARDAR COMO»
+- Nuevo botón «Guardar como» junto a «Guardar» (mismo estilo).
+  · Guardar (Ctrl+S): guarda directamente en el archivo abierto; solo
+    pregunta la primera vez, si el proyecto aún no tiene archivo.
+  · Guardar como (Ctrl+Mayús+S): pregunta siempre nombre y carpeta; propone
+    la carpeta y el nombre del archivo abierto.
+- Archivo modificado: electrical_work.py.
+
 REVISIÓN 6: CORRECCIÓN «Error al guardar»
 - Causa (heredada de la V0.5.3): al girar o mover un componente cuyos bornes
   unía un mismo cable, ese cable podía quedar con longitud cero (invisible) y
