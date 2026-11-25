@@ -8,7 +8,7 @@ from __future__ import annotations
 import csv
 import uuid
 from pathlib import Path
-from core import SYMBOL_NAMES, plc_channel_name, validate_project
+from core import SYMBOL_NAMES, plc_channel_name, plc_names, validate_project
 
 # Los bornes, conexiones, textos, imágenes y tierras no son aparatos que
 # requieran ficha de descripción. Las líneas se almacenan aparte como cables.
@@ -72,6 +72,8 @@ def documentation_rows(project):
             kind = item['kind']
             identifier = item['id']
             if kind == 'plc_module':
+                pin, pout, numbering = plc_names(item)
+                prefixes = {'I': pin, 'Q': pout}
                 for direction, count, group in (
                     ('I', item['plc_inputs'], 'Entradas PLC'),
                     ('Q', item['plc_outputs'], 'Salidas PLC'),
@@ -80,7 +82,7 @@ def documentation_rows(project):
                         key = f'plc:{identifier}:{direction}:{index}'
                         if key not in hidden:
                             rows.append(dict(key=key, group=group,
-                                reference=plc_channel_name(direction, index),
+                                reference=plc_channel_name(prefixes[direction], index, numbering),
                                 sheets=sheet, description=saved.get(key, ''), manual=False))
                 continue
             group = _classify(kind)

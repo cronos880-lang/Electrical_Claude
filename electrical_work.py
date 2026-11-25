@@ -28,7 +28,7 @@ from documentation import (
 from pdf_export import export_project_pdf
 from core import (
     PAGE_W,PAGE_H,GRID,SYMBOL_NAMES,DEFAULT_REFS,new_document,make_demo,selector_fixed_x,MAX_SELECTOR_POSITIONS,
-    make_symbol,make_wire,make_text,repair_wires,make_image,move_element,move_wire,rotate_element,snap,new_id,plc_geometry,MAX_PLC_CHANNELS,
+    make_symbol,make_wire,make_text,repair_wires,plc_names,DEFAULT_PLC_NAMES,make_image,move_element,move_wire,rotate_element,snap,new_id,plc_geometry,MAX_PLC_CHANNELS,
     symbol_shapes,annotation_positions,_rotate,port_positions,wire_connection_target,junction_points,save_document,load_document,export_svg,make_straight_wire,make_rectangle_wire, terminal_label_names, get_terminal_labels, new_project, project_from_document, load_project, save_project, MAX_SHEETS,
 )
 
@@ -64,6 +64,7 @@ class ElectricalWorkApp:
         self._plc_config=(8,8)
         self._plc_brand='' 
         self._plc_model='' 
+        self._plc_names=DEFAULT_PLC_NAMES
         self._image_refs=[]
         self._quality_images=[]
         self._symbol_cache=OrderedDict()
@@ -230,8 +231,13 @@ class ElectricalWorkApp:
         self._paint_icons()
 
     def _plc_counts_dialog(self,initial=None):
-        """Solicita cantidades y textos del PLC; None indica cancelación."""
-        initial=initial or (self._plc_config[0], self._plc_config[1], self._plc_brand, self._plc_model)
+        """Solicita cantidades, textos y nomenclatura del PLC; None = cancelar.
+
+        Devuelve (entradas, salidas, marca, modelo, prefijo_E, prefijo_S, numeración).
+        """
+        from core import PLC_NUMBERINGS,PLC_PRESETS,plc_channel_name,check_plc_names
+        initial=initial or (self._plc_config[0],self._plc_config[1],self._plc_brand,
+                            self._plc_model,*self._plc_names)
         dialog=tk.Toplevel(self.root)
         dialog.title('Configurar PLC')
         dialog.transient(self.root);dialog.resizable(False,False)
@@ -246,6 +252,64 @@ class ElectricalWorkApp:
             ent=tk.Entry(panel,textvariable=sv,width=28,justify='center' if idx<2 else 'left',font=(FONT,11))
             ent.pack(fill='x',pady=(3,11 if idx<3 else 8))
             vars.append((sv,ent))
+        # --- Nomenclatura de entradas y salidas (según fabricante) ---
+        box=tk.LabelFrame(panel,text=' Nombres de entradas y salidas ',bg='#f8fbfd',fg=INK,
+                          font=(FONT,9,'bold'),padx=10,pady=8)
+        box.pack(fill='x',pady=(2,10))
+        preset_names=[p[0] for p in PLC_PRESETS]+['Personalizado']
+        preset_var=tk.StringVar()
+        in_var=tk.StringVar(value=initial[4]);out_var=tk.StringVar(value=initial[5])
+        numbering_keys=list(PLC_NUMBERINGS)
+        num_var=tk.StringVar(value=PLC_NUMBERINGS.get(initial[6],PLC_NUMBERINGS['byte']))
+        def match_preset():
+            for name,pi,po,num in PLC_PRESETS:
+                if (pi,po,num)==(in_var.get(),out_var.get(),numbering_keys[[PLC_NUMBERINGS[k] for k in numbering_keys].index(num_var.get())]):
+                    return name
+            return 'Personalizado'
+        preset_var.set(match_preset())
+        row=tk.Frame(box,bg='#f8fbfd');row.pack(fill='x',pady=(0,6))
+        tk.Label(row,text='Fabricante',bg='#f8fbfd',fg=INK,width=11,anchor='w').pack(side='left')
+        preset=ttk.Combobox(row,textvariable=preset_var,values=preset_names,state='readonly',width=36)
+        preset.pack(side='left',fill='x',expand=True)
+        row=tk.Frame(box,bg='#f8fbfd');row.pack(fill='x',pady=(0,6))
+        tk.Label(row,text='Entradas',bg='#f8fbfd',fg=INK,width=11,anchor='w').pack(side='left')
+        tk.Entry(row,textvariable=in_var,width=6,justify='center',font=(FONT,11)).pack(side='left')
+        tk.Label(row,text='   Salidas',bg='#f8fbfd',fg=INK).pack(side='left')
+        tk.Entry(row,textvariable=out_var,width=6,justify='center',font=(FONT,11)).pack(side='left',padx=(6,0))
+        row=tk.Frame(box,bg='#f8fbfd');row.pack(fill='x',pady=(0,6))
+        tk.Label(row,text='Numeración',bg='#f8fbfd',fg=INK,width=11,anchor='w').pack(side='left')
+        ttk.Combobox(row,textvariable=num_var,values=[PLC_NUMBERINGS[k] for k in numbering_keys],
+                     state='readonly',width=36).pack(side='left',fill='x',expand=True)
+        sample_var=tk.StringVar()
+        tk.Label(box,textvariable=sample_var,bg='#f8fbfd',fg=TEAL,font=(FONT,9,'bold'),
+                 justify='left').pack(anchor='w',pady=(2,0))
+        def current_numbering():
+            labels=[PLC_NUMBERINGS[k] for k in numbering_keys]
+            return numbering_keys[labels.index(num_var.get())] if num_var.get() in labels else 'byte'
+        def update_sample(*_):
+            n=current_numbering()
+            try:
+                check_plc_names(in_var.get().strip(),out_var.get().strip(),n)
+                ins=', '.join(plc_channel_name(in_var.get().strip(),i,n) for i in (0,1,7,8))
+                outs=', '.join(plc_channel_name(out_var.get().strip(),i,n) for i in (0,1,7,8))
+                sample_var.set(f'Entradas: {ins} …\nSalidas: {outs} …')
+            except ValueError as exc:
+                sample_var.set(str(exc))
+            if not applying[0]:
+                preset_var.set(match_preset())
+        applying=[False]
+        def apply_preset(*_):
+            for name,pi,po,num in PLC_PRESETS:
+                if name==preset_var.get():
+                    applying[0]=True
+                    try:
+                        in_var.set(pi);out_var.set(po);num_var.set(PLC_NUMBERINGS[num])
+                    finally:
+                        applying[0]=False
+                    update_sample()
+        preset.bind('<<ComboboxSelected>>',apply_preset)
+        for var in (in_var,out_var,num_var):var.trace_add('write',update_sample)
+        update_sample()
         tk.Label(panel,text=f'Entre 0 y {MAX_PLC_CHANNELS} cada uno; al menos una señal.\nSe añadirán bornes 24v y 0v.', bg='#f8fbfd',fg=MUTED,justify='left').pack(anchor='w',pady=(0,12))
         result=[None]
         def accept():
@@ -256,9 +320,13 @@ class ElectricalWorkApp:
             except (ValueError,TypeError):
                 messagebox.showwarning('PLC','Introduce cantidades válidas de entradas y salidas.',parent=dialog)
                 return
+            pin,pout,num=in_var.get().strip(),out_var.get().strip(),current_numbering()
+            try:check_plc_names(pin,pout,num)
+            except ValueError as exc:
+                messagebox.showwarning('PLC',str(exc),parent=dialog);return
             brand=vars[2][0].get().strip()
             model=vars[3][0].get().strip()
-            result[0]=(a,b,brand[:120],model[:120]);dialog.destroy()
+            result[0]=(a,b,brand[:120],model[:120],pin,pout,num);dialog.destroy()
         buttons=tk.Frame(panel,bg='#f8fbfd');buttons.pack(anchor='e')
         tk.Button(buttons,text='Cancelar',command=dialog.destroy).pack(side='left',padx=5)
         tk.Button(buttons,text='Aceptar',command=accept,bg=TEAL,fg='white').pack(side='left')
@@ -274,6 +342,7 @@ class ElectricalWorkApp:
             self._plc_config=(chosen[0],chosen[1])
             self._plc_brand=chosen[2]
             self._plc_model=chosen[3]
+            self._plc_names=tuple(chosen[4:7])
             self._set_tool('plc_module')
 
     def _toggle_contact_group(self, event=None):
@@ -781,9 +850,44 @@ class ElectricalWorkApp:
         # La tolerancia es visible y estable en pantalla incluso con zoom.
         return wire_connection_target(self.doc,x,y,tolerance=12*self._s/self.zoom)
 
+    def _alignment_refs(self):
+        """Puntos de referencia para las guías: extremos y codos de cables,
+        bornes de componentes y el inicio del cable que se está dibujando."""
+        refs=set()
+        for wire in self.doc['wires']:
+            refs.update(tuple(p) for p in wire['points'])
+        for item in self.doc['elements']:
+            refs.update(port_positions(item))
+        if self.pending_wire is not None:
+            refs.add(tuple(self.pending_wire))
+        return refs
+
+    def _align_point(self,x,y):
+        """Ajuste a la misma vertical/horizontal de un punto existente.
+
+        Devuelve ((x, y) ajustado, ref_vertical, ref_horizontal). Las
+        referencias son el punto alineado más próximo en cada eje.
+        """
+        px,py=snap(x),snap(y)
+        tol=8*self._s/self.zoom
+        best_v=best_h=None
+        for rx,ry in self._alignment_refs():
+            if (rx,ry)==(px,py):continue
+            dx=abs(rx-x);dy=abs(ry-y)
+            if dx<=tol and (best_v is None or (dx,abs(ry-y))<best_v[0]):
+                best_v=((dx,abs(ry-y)),(rx,ry))
+            if dy<=tol and (best_h is None or (dy,abs(rx-x))<best_h[0]):
+                best_h=((dy,abs(rx-x)),(rx,ry))
+        vref=best_v[1] if best_v else None
+        href=best_h[1] if best_h else None
+        if vref:px=vref[0]
+        if href:py=href[1]
+        return (px,py),vref,href
+
     def _wire_xy(self,x,y):
         target=self._wire_target(x,y)
-        return target['point'] if target else (snap(x),snap(y))
+        if target:return target['point']
+        return self._align_point(x,y)[0]
 
     def _hit(self,e):
         cx=self.canvas.canvasx(e.x)
@@ -1069,6 +1173,9 @@ class ElectricalWorkApp:
                                draw_scale=self.doc.get('drawing_scale',1.0))
                 el['plc_brand']=self._plc_brand
                 el['plc_model']=self._plc_model
+                if tuple(self._plc_names)!=DEFAULT_PLC_NAMES:
+                    (el['plc_input_prefix'],el['plc_output_prefix'],
+                     el['plc_numbering'])=self._plc_names
             else:
                 el=make_symbol(kind,x,y,label,draw_scale=self.doc.get('drawing_scale',1.0))
             self.doc['elements'].append(el)
@@ -1901,7 +2008,20 @@ class ElectricalWorkApp:
         x,y=self._last_cursor
         if not self._in_page((x,y)):return
         target=self._wire_target(x,y)
-        end=target['point'] if target else (snap(x),snap(y))
+        vref=href=None
+        if target:end=target['point']
+        else:end,vref,href=self._align_point(x,y)
+        # Guías de alineación discontinuas (como el rastreo de AutoCAD).
+        ex,ey=self._xy(*end)
+        guide=dict(fill=TEAL,width=max(1,round(self._s)),dash=(5,4),tags=('wire-overlay',))
+        m=4*self._s
+        for ref,vertical in ((vref,True),(href,False)):
+            if ref is None:continue
+            rx,ry=self._xy(*ref)
+            if vertical:cv.create_line(round(rx)+.5,ry,round(rx)+.5,ey,**guide)
+            else:cv.create_line(rx,round(ry)+.5,ex,round(ry)+.5,**guide)
+            cv.create_line(rx-m,ry-m,rx+m,ry+m,fill=TEAL,width=max(1,round(self._s)),tags=('wire-overlay',))
+            cv.create_line(rx-m,ry+m,rx+m,ry-m,fill=TEAL,width=max(1,round(self._s)),tags=('wire-overlay',))
         if self.pending_wire is not None:
             if end!=self.pending_wire:
                 try:
@@ -2290,10 +2410,11 @@ class ElectricalWorkApp:
             self._edit_selector_dialog(el)
             return
         if el['kind']=='plc_module':
-            chosen=self._plc_counts_dialog((el['plc_inputs'],el['plc_outputs'],el.get('plc_brand',''),el.get('plc_model','')))
+            chosen=self._plc_counts_dialog((el['plc_inputs'],el['plc_outputs'],el.get('plc_brand',''),el.get('plc_model',''),*plc_names(el)))
             if chosen is not None:
                 counts_changed=(chosen[0],chosen[1])!=(el['plc_inputs'],el['plc_outputs'])
-                texts_changed=(chosen[2],chosen[3])!=(el.get('plc_brand',''),el.get('plc_model',''))
+                texts_changed=((chosen[2],chosen[3])!=(el.get('plc_brand',''),el.get('plc_model',''))
+                               or tuple(chosen[4:7])!=plc_names(el))
                 if counts_changed:
                     old_ports=set(port_positions(el))
                     wired=any(tuple(w['points'][i]) in old_ports for w in self.doc['wires'] for i in (0,-1))
@@ -2303,6 +2424,10 @@ class ElectricalWorkApp:
                 if counts_changed or texts_changed:
                     self._history()
                     el.update(plc_inputs=chosen[0],plc_outputs=chosen[1],plc_brand=chosen[2],plc_model=chosen[3])
+                    if tuple(chosen[4:7])==DEFAULT_PLC_NAMES:
+                        for key in ('plc_input_prefix','plc_output_prefix','plc_numbering'):el.pop(key,None)
+                    else:
+                        el['plc_input_prefix'],el['plc_output_prefix'],el['plc_numbering']=chosen[4:7]
                     if counts_changed:
                         geom=plc_geometry(el)
                         factor=el.get('draw_scale',1.0)
@@ -2992,16 +3117,29 @@ class ElectricalWorkApp:
         content=tk.Frame(popup,bg='#f8fbfd',padx=22,pady=18)
         content.pack(fill='both',expand=True)
         tk.Label(content,text='Exportar a PDF',font=(FONT,13,'bold'),bg='#f8fbfd',fg=INK).pack(anchor='w',pady=(0,12))
-        mode=tk.StringVar(value='all' if len(self.project['sheets'])>1 else 'one')
-        options=[('Hoja actual  ·  '+str(self.sheet_index+1).zfill(3),'one'),
-                 ('Proyecto completo  ·  '+str(len(self.project['sheets']))+' hoja(s)','all')]
-        for label,val in options:
-            tk.Radiobutton(content,text=label,variable=mode,value=val,
-                           bg='#f8fbfd',fg=INK,activebackground='#f8fbfd',font=(FONT,10)).pack(anchor='w',pady=4)
+        sheets=self.project['sheets']
+        mode=tk.StringVar(value='all' if len(sheets)>1 else 'one')
+        sheet_names=[f'{i+1:03d}  {sheet.get("title","")}' for i,sheet in enumerate(sheets)]
+        sheet_var=tk.StringVar(value=sheet_names[self.sheet_index])
+        radio=dict(variable=mode,bg='#f8fbfd',fg=INK,activebackground='#f8fbfd',font=(FONT,10))
+        row=tk.Frame(content,bg='#f8fbfd');row.pack(anchor='w',fill='x',pady=4)
+        tk.Radiobutton(row,text='Una hoja de esquema:',value='one',**radio).pack(side='left')
+        picker=ttk.Combobox(row,textvariable=sheet_var,values=sheet_names,state='readonly',
+                            width=min(40,max(18,max(len(n) for n in sheet_names)+2)))
+        picker.pack(side='left',padx=(6,0))
+        picker.bind('<<ComboboxSelected>>',lambda e:mode.set('one'))
+        tk.Radiobutton(content,text=f'Todas las hojas  ·  {len(sheets)} hoja(s)',value='all',
+                       **radio).pack(anchor='w',pady=4)
+        tk.Radiobutton(content,text='Solo la documentación',value='docs',
+                       **radio).pack(anchor='w',pady=4)
         include=tk.BooleanVar(value=False)
-        tk.Checkbutton(content,text='Añadir documentación al final del PDF',
+        include_box=tk.Checkbutton(content,text='Añadir documentación al final del PDF',
                        variable=include,bg='#f8fbfd',fg=INK,
-                       activebackground='#f8fbfd',font=(FONT,10)).pack(anchor='w',pady=(13,10))
+                       activebackground='#f8fbfd',font=(FONT,10))
+        include_box.pack(anchor='w',pady=(13,10))
+        def on_mode(*_):
+            include_box.configure(state='disabled' if mode.get()=='docs' else 'normal')
+        mode.trace_add('write',on_mode)
         tk.Label(content,text='Formato DIN A4 apaisado (297 × 210 mm).\nUn plano por página, sin deformar símbolos ni dibujos.',
                  justify='left',bg='#f8fbfd',fg=MUTED,font=(FONT,9)).pack(anchor='w',pady=(5,15))
         controls=tk.Frame(content,bg='#f8fbfd')
@@ -3009,15 +3147,21 @@ class ElectricalWorkApp:
         def make_pdf():
             selected_mode=mode.get()
             add_docs=include.get()
+            chosen_sheet=sheet_names.index(sheet_var.get()) if sheet_var.get() in sheet_names else self.sheet_index
             popup.destroy()
+            initial=('Documentacion.pdf' if selected_mode=='docs' else
+                     f'Esquema_hoja_{chosen_sheet+1:03d}.pdf' if selected_mode=='one' else 'Esquema.pdf')
             filename=filedialog.asksaveasfilename(parent=self.root,title='Guardar PDF A4',
-                defaultextension='.pdf',filetypes=[('Documento PDF','*.pdf')],initialfile='Esquema.pdf')
+                defaultextension='.pdf',filetypes=[('Documento PDF','*.pdf')],initialfile=initial)
             if not filename:return
             try:
-                indexes=[self.sheet_index] if selected_mode=='one' else None
                 self._repair_project()
-                total=export_project_pdf(self.project,filename,sheet_indices=indexes,
-                                         include_documentation=add_docs)
+                if selected_mode=='docs':
+                    total=export_project_pdf(self.project,filename,documentation_only=True)
+                else:
+                    indexes=[chosen_sheet] if selected_mode=='one' else None
+                    total=export_project_pdf(self.project,filename,sheet_indices=indexes,
+                                             include_documentation=add_docs)
             except (ValueError,OSError,RuntimeError) as exc:
                 messagebox.showerror('Error al exportar PDF',str(exc),parent=self.root);return
             self._status_var.set('PDF exportado: '+os.path.basename(filename))

@@ -60,6 +60,24 @@ REVISIÓN 5 (pedido del usuario)
 - Zoom: la casilla muestra el porcentaje redondeado (71 en vez de 71.178)
   y al pulsarla se marca todo el número: lo que se escriba lo sustituye.
 
+REVISIÓN 8: EXPORTAR, NOMENCLATURA DE PLC Y GUÍAS DE ALINEACIÓN
+- Exportar PDF: tres opciones en el mismo diálogo:
+  · Una hoja de esquema (se elige cuál en el desplegable),
+  · Todas las hojas,
+  · Solo la documentación.
+  «Añadir documentación al final» sigue disponible para las dos primeras.
+- PLC: cada PLC guarda sus nombres de entradas/salidas y su numeración.
+  Fabricantes preconfigurados: Siemens/IEC (I0.0, Q0.0), Mitsubishi (X0…X7,
+  X10 · Y), Delta/Keyence (X0, X1… · Y), Schneider/Omron (I1, I2… · Q),
+  o personalizado (prefijos de 1 a 6 caracteres). Vista previa de los nombres
+  en el diálogo; se aplican al dibujo, PDF y documentación. Los PLC antiguos
+  siguen con I/Q byte.bit (compatibles con la V0.5.3).
+- Guías de alineación al dibujar líneas (como el rastreo de AutoCAD): si el
+  cursor queda en la misma vertical u horizontal que un extremo, codo o borne
+  existente (o el inicio de la propia línea), aparece una guía discontinua
+  con una «×» en el punto de referencia y el punto se ajusta a esa alineación.
+- Archivos modificados: core.py, documentation.py, electrical_work.py.
+
 REVISIÓN 7: BOTÓN «GUARDAR COMO»
 - Nuevo botón «Guardar como» junto a «Guardar» (mismo estilo).
   · Guardar (Ctrl+S): guarda directamente en el archivo abierto; solo

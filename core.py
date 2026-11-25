@@ -207,10 +207,11 @@ def annotation_positions(item):
         top,bottom=geo['top'],geo['bottom']
         for index,(xx,label) in enumerate(((geo['positive'][0],'24v'),(geo['negative'][0],'0v'))):
             emit(f'power:{index}','textcenter',*pos(xx,top+16),label,12)
+        pin,pout,numbering=plc_names(item)
         for index,xx in enumerate(geo['inputs']):
-            emit(f'input:{index}','textcenter',*pos(xx,top+30),plc_channel_name('I',index),10)
+            emit(f'input:{index}','textcenter',*pos(xx,top+30),plc_channel_name(pin,index,numbering),10)
         for index,xx in enumerate(geo['outputs']):
-            emit(f'output:{index}','textcenter',*pos(xx,bottom-18),plc_channel_name('Q',index),10)
+            emit(f'output:{index}','textcenter',*pos(xx,bottom-18),plc_channel_name(pout,index,numbering),10)
         return result
 
     if kind in ('directional_terminal','directional_terminal_in'):
@@ -393,9 +394,51 @@ def plc_geometry(item):
     }
 
 
-def plc_channel_name(prefix,number):
-    # Numeración sucesiva: I0.0–I0.7, I1.0..., y Q equivalentes.
+# Nomenclatura de canales del PLC (cada fabricante usa la suya).
+PLC_NUMBERINGS = {
+    'byte': 'Byte.bit  ·  I0.0 … I0.7, I1.0',
+    'decimal0': 'Correlativa desde 0  ·  X0, X1, X2 …',
+    'decimal1': 'Correlativa desde 1  ·  I1, I2, I3 …',
+    'octal': 'Octal  ·  X0 … X7, X10 …',
+}
+PLC_PRESETS = (
+    ('Siemens / IEC (I, Q · byte.bit)', 'I', 'Q', 'byte'),
+    ('Mitsubishi (X, Y · octal)', 'X', 'Y', 'octal'),
+    ('Delta / Keyence (X, Y · correlativa)', 'X', 'Y', 'decimal0'),
+    ('Schneider / Omron (I, Q · desde 1)', 'I', 'Q', 'decimal1'),
+)
+DEFAULT_PLC_NAMES = ('I', 'Q', 'byte')
+
+
+def plc_channel_name(prefix,number,numbering='byte'):
+    """Nombre del canal ``number`` (0, 1, 2…) según la numeración elegida.
+
+    byte: I0.0–I0.7, I1.0… (formato histórico del programa)."""
+    if numbering=='decimal0':
+        return f'{prefix}{number}'
+    if numbering=='decimal1':
+        return f'{prefix}{number+1}'
+    if numbering=='octal':
+        return f'{prefix}{number:o}'
     return f'{prefix}{number//8}.{number%8}'
+
+
+def plc_names(item):
+    """(prefijo entradas, prefijo salidas, numeración) de un PLC.
+
+    Los proyectos anteriores no tienen estos campos: I, Q y byte.bit."""
+    return (item.get('plc_input_prefix',DEFAULT_PLC_NAMES[0]),
+            item.get('plc_output_prefix',DEFAULT_PLC_NAMES[1]),
+            item.get('plc_numbering',DEFAULT_PLC_NAMES[2]))
+
+
+def check_plc_names(inp,out,numbering):
+    for value in (inp,out):
+        if (not isinstance(value,str) or not (1<=len(value)<=6)
+                or any(ord(c)<33 for c in value)):
+            raise ValueError('Prefijo de PLC inválido (1 a 6 caracteres, sin espacios).')
+    if numbering not in PLC_NUMBERINGS:
+        raise ValueError('Numeración de PLC desconocida.')
 
 
 def make_text(x,y,text='Texto',font_family='Arial',font_size=14):
@@ -832,6 +875,7 @@ def validate_document(obj):
                 value=item.get(key,'')
                 if not isinstance(value,str) or len(value)>120 or any(ord(c)<32 for c in value):
                     raise ValueError('Texto de PLC inválido.')
+            check_plc_names(*plc_names(item))
         if item['kind'] in ('directional_terminal','directional_terminal_in'):
             # Aceptar direction_text de proyectos anteriores, pero no dibujarlo.
             for key,limit in (('direction_page',80),('direction_text',160)):
