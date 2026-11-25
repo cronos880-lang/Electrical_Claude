@@ -60,6 +60,13 @@ REVISIÓN 5 (pedido del usuario)
 - Zoom: la casilla muestra el porcentaje redondeado (71 en vez de 71.178)
   y al pulsarla se marca todo el número: lo que se escriba lo sustituye.
 
+REVISIÓN 9: GUÍAS Y VISTA PREVIA AL COLOCAR SÍMBOLOS
+- Al elegir un símbolo, una vista previa en turquesa claro sigue al ratón.
+- Si un borne del símbolo queda cerca de la vertical u horizontal de un cable,
+  codo o borne existente, aparece la guía discontinua con «×» en la referencia
+  y el símbolo se ajusta para que su borne quede exactamente alineado.
+- Archivo modificado: electrical_work.py (requiere los de la revisión 8).
+
 REVISIÓN 8: EXPORTAR, NOMENCLATURA DE PLC Y GUÍAS DE ALINEACIÓN
 - Exportar PDF: tres opciones en el mismo diálogo:
   · Una hoja de esquema (se elige cuál en el desplegable),

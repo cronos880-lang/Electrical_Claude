@@ -117,6 +117,25 @@ class GuiFeatures(unittest.TestCase):
         new = self.app.doc['wires'][-1]['points']
         self.assertEqual(new[-1][0], 500)
 
+    def test_symbol_placement_aligns_terminals_and_shows_ghost(self):
+        self.app.doc['wires'] = [make_wire((500, 200), (500, 300))]
+        self.app.redraw()
+        self.app._set_tool('contact_no')
+        tol = 8 * self.app._s / self.app.zoom
+        cv = self.app.canvas
+        px, py = self.app._xy(500 + tol * 0.6, 520)
+        wx, wy = round(px - cv.canvasx(0)), round(py - cv.canvasy(0))
+        cv.event_generate('<Motion>', x=wx, y=wy)
+        self.root.update()
+        self.assertTrue(cv.find_withtag('wire-overlay'), 'vista previa y guías visibles')
+        cv.event_generate('<ButtonPress-1>', x=wx, y=wy, time=tick())
+        cv.event_generate('<ButtonRelease-1>', x=wx, y=wy, time=tick())
+        self.root.update()
+        placed = self.app.doc['elements'][-1]
+        self.assertEqual(placed['kind'], 'contact_no')
+        self.assertIn(500, [p[0] for p in core.port_positions(placed)],
+                      'un borne del símbolo queda en la vertical del cable')
+
     def _run_export(self, choose):
         import electrical_work
         self.app.project['sheets'].append(core.new_document())

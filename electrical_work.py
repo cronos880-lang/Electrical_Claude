@@ -76,6 +76,7 @@ class ElectricalWorkApp:
         self._grid_region=None
         self._shape_cache={}
         self._right=None
+        self._cursor_inside=False
         # Estilo inspirado en AutoCAD Electrical (opciones; ver _ESTILO).
         self._style=self._read_style()
         self._hover=None
@@ -735,6 +736,10 @@ class ElectricalWorkApp:
         self.canvas.bind('<B1-Motion>',self.on_canvas_drag)
         self.canvas.bind('<ButtonRelease-1>',self.on_canvas_up)
         self.canvas.bind('<Motion>',self.on_motion)
+        def leave(e):
+            self._cursor_inside=False
+            if self.tool in SYMBOL_NAMES:self.canvas.delete('wire-overlay')
+        self.canvas.bind('<Leave>',leave)
         self.canvas.bind('<MouseWheel>',self.on_mousewheel)
         self.canvas.bind('<Button-4>',self.on_mousewheel)
         self.canvas.bind('<Button-5>',self.on_mousewheel)
@@ -1145,6 +1150,10 @@ class ElectricalWorkApp:
             return
         if self.tool in SYMBOL_NAMES:
             kind=self.tool
+            # Misma posición ajustada que muestra la vista previa con guías.
+            (x,y),_guides=self._align_symbol(kind,*self._point(e))
+            x=max(GRID,min(PAGE_W-GRID,x));y=max(GRID,min(PAGE_H-GRID,y))
+            self.canvas.delete('wire-overlay')
             n=1
             prefix=DEFAULT_REFS.get(kind,'')
             existing={el.get('label','') for el in self.doc['elements']}
@@ -1341,6 +1350,7 @@ class ElectricalWorkApp:
     def on_motion(self,e):
         x,y=self._point(e)
         self._last_cursor=(x,y)
+        self._cursor_inside=True
         if self.tool=='select' and not self.dragging and self._right is None:
             # Cursor de movimiento solo sobre una etiqueta desplazable.
             self.canvas.configure(cursor='fleur' if self._hit_annotation(e) else 'arrow')
@@ -1349,6 +1359,77 @@ class ElectricalWorkApp:
                 if hit!=self._hover:self._draw_hover(hit)
         if self._style['cruceta']:self._draw_crosshair(e)
         if self.tool in ('wire','wire_straight','wire_rectangle'):self._draw_wire_overlay()
+        elif self.tool in SYMBOL_NAMES:self._draw_symbol_overlay()
+
+    def _symbol_template(self,kind,x,y):
+        scale=self.doc.get('drawing_scale',1.0)
+        if kind=='selector_multi':
+            return make_symbol(kind,x,y,'',selector_positions=self._selector_positions,draw_scale=scale)
+        if kind=='plc_module':
+            a,b=self._plc_config
+            el=make_symbol(kind,x,y,'',plc_inputs=a,plc_outputs=b,draw_scale=scale)
+            el['plc_brand']=self._plc_brand;el['plc_model']=self._plc_model
+            if tuple(self._plc_names)!=DEFAULT_PLC_NAMES:
+                el['plc_input_prefix'],el['plc_output_prefix'],el['plc_numbering']=self._plc_names
+            return el
+        return make_symbol(kind,x,y,'',draw_scale=scale)
+
+    def _align_symbol(self,kind,x,y):
+        """Ajusta la posición para que algún borne del símbolo quede en la
+        misma vertical/horizontal que un punto existente (cable, codo o borne).
+
+        Devuelve ((x, y), guías) con guías = [(referencia, borne_ajustado, vertical)].
+        """
+        cx,cy=x,y                      # cursor real (sin rejilla)
+        x,y=snap(x),snap(y)
+        try:
+            # Desplazamiento de cada borne respecto al punto de inserción.
+            offsets=[(px-x,py-y) for px,py in port_positions(self._symbol_template(kind,x,y))]
+        except (ValueError,KeyError):
+            return (x,y),[]
+        refs=self._alignment_refs()
+        tol=8*self._s/self.zoom
+        best_x=best_y=None   # (distancia, nueva coordenada de inserción, ref, offset)
+        for ox,oy in offsets:
+            for rx,ry in refs:
+                dx=abs(rx-(cx+ox));dy=abs(ry-(cy+oy))
+                # A igual alineación, la referencia más próxima al borne.
+                if dx<=tol and (best_x is None or (dx,dy)<best_x[0]):best_x=((dx,dy),rx-ox,(rx,ry),(ox,oy))
+                if dy<=tol and (best_y is None or (dy,dx)<best_y[0]):best_y=((dy,dx),ry-oy,(rx,ry),(ox,oy))
+        nx=best_x[1] if best_x else x
+        ny=best_y[1] if best_y else y
+        guides=[]
+        if best_x:guides.append((best_x[2],(nx+best_x[3][0],ny+best_x[3][1]),True))
+        if best_y:guides.append((best_y[2],(nx+best_y[3][0],ny+best_y[3][1]),False))
+        return (nx,ny),guides
+
+    def _draw_symbol_overlay(self):
+        """Vista previa fantasma del símbolo y guías de alineación."""
+        cv=self.canvas
+        cv.delete('wire-overlay')
+        x,y=self._last_cursor
+        if not self._in_page((x,y)):return
+        kind=self.tool
+        (ax,ay),guides=self._align_symbol(kind,x,y)
+        try:
+            ghost=self._symbol_template(kind,ax,ay)
+        except (ValueError,KeyError):
+            return
+        body=symbol_shapes(ghost,include_annotations=False)
+        tags=('wire-overlay',)
+        if quality_render.AVAILABLE:
+            self._draw_quality_symbol(body,tags,'#8fd6d2',(ax,ay))
+        else:
+            for shape in body:self._draw_shape(shape,tags,'#8fd6d2')
+        guide=dict(fill=TEAL,width=max(1,round(self._s)),dash=(5,4),tags=tags)
+        m=4*self._s
+        for ref,port,vertical in guides:
+            rx,ry=self._xy(*ref);px,py=self._xy(*port)
+            if (rx,ry)==(px,py):continue
+            if vertical:cv.create_line(round(rx)+.5,ry,round(rx)+.5,py,**guide)
+            else:cv.create_line(rx,round(ry)+.5,px,round(ry)+.5,**guide)
+            cv.create_line(rx-m,ry-m,rx+m,ry+m,fill=TEAL,width=max(1,round(self._s)),tags=tags)
+            cv.create_line(rx-m,ry+m,rx+m,ry-m,fill=TEAL,width=max(1,round(self._s)),tags=tags)
 
     def on_mousewheel(self,e):
         # La rueda controla SIEMPRE el zoom (sin necesidad de Ctrl).
@@ -1929,6 +2010,8 @@ class ElectricalWorkApp:
         cv.create_line(0,0,0,0,state='hidden',tags=('z_elements',))
         self._draw_junctions()
         self._draw_wire_overlay()
+        if self.tool in SYMBOL_NAMES and self._cursor_inside:
+            self._draw_symbol_overlay()
         if self.tool in ('select','select_box') and self.marquee_start is not None and self.marquee_end is not None:
             x1,y1=self._xy(*self.marquee_start)
             x2,y2=self._xy(*self.marquee_end)
