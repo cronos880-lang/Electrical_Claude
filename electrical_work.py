@@ -28,7 +28,7 @@ from documentation import (
 from pdf_export import export_project_pdf
 from core import (
     PAGE_W,PAGE_H,GRID,SYMBOL_NAMES,DEFAULT_REFS,new_document,make_demo,selector_fixed_x,MAX_SELECTOR_POSITIONS,
-    make_symbol,make_wire,make_text,make_image,move_element,move_wire,rotate_element,snap,new_id,plc_geometry,MAX_PLC_CHANNELS,
+    make_symbol,make_wire,make_text,repair_wires,make_image,move_element,move_wire,rotate_element,snap,new_id,plc_geometry,MAX_PLC_CHANNELS,
     symbol_shapes,annotation_positions,_rotate,port_positions,wire_connection_target,junction_points,save_document,load_document,export_svg,make_straight_wire,make_rectangle_wire, terminal_label_names, get_terminal_labels, new_project, project_from_document, load_project, save_project, MAX_SHEETS,
 )
 
@@ -2631,8 +2631,21 @@ class ElectricalWorkApp:
         if not name:return False
         return self._save_to(name)
 
-    def _save_to(self,name):
+    def _repair_project(self):
+        """Corrige cables inválidos (p. ej. de longitud cero) antes de guardar
+        o exportar, para que nunca se bloquee el guardado. Se puede deshacer."""
         self._sync_current_sheet()
+        probe=deepcopy(self.project)
+        if not sum(repair_wires(sheet) for sheet in probe['sheets']):return 0
+        self._history()
+        total=sum(repair_wires(sheet) for sheet in self.project['sheets'])
+        self.doc=self.project['sheets'][self.sheet_index]
+        self.selected=None;self.multi_selected.clear()
+        self.redraw()
+        return total
+
+    def _save_to(self,name):
+        repaired=self._repair_project()
         try:save_project(self.project,name)
         except (OSError,ValueError) as ex:
             messagebox.showerror('Error al guardar',str(ex),parent=self.root)
@@ -2640,7 +2653,9 @@ class ElectricalWorkApp:
         self.filepath=name
         self.dirty=False
         self._update_caption()
-        self._status_var.set('Guardado: '+os.path.basename(name))
+        self._status_var.set('Guardado: '+os.path.basename(name)+(
+            f' · corregidos {repaired} cable(s) de longitud cero o con tramos no válidos'
+            if repaired else ''))
         return True
 
     def save_file(self):
@@ -2922,6 +2937,7 @@ class ElectricalWorkApp:
                        defaultextension='.pdf',filetypes=[('PDF A4','*.pdf')],
                        initialfile='Documentacion.pdf')
             if not filename:return
+            self._repair_project()
             try:count=export_project_pdf(self.project,filename,documentation_only=True)
             except (ValueError,OSError,RuntimeError) as exc:
                 messagebox.showerror('Error PDF',str(exc),parent=panel);return
@@ -2935,6 +2951,7 @@ class ElectricalWorkApp:
                 defaultextension='.csv',filetypes=[('Archivo CSV para Excel','*.csv')],
                 initialfile='Documentacion.csv')
             if not filename:return
+            self._repair_project()
             try:export_documentation_csv(self.project,filename)
             except (ValueError,OSError) as exc:
                 messagebox.showerror('Error CSV',str(exc),parent=panel);return
@@ -2985,6 +3002,7 @@ class ElectricalWorkApp:
             if not filename:return
             try:
                 indexes=[self.sheet_index] if selected_mode=='one' else None
+                self._repair_project()
                 total=export_project_pdf(self.project,filename,sheet_indices=indexes,
                                          include_documentation=add_docs)
             except (ValueError,OSError,RuntimeError) as exc:
@@ -3002,6 +3020,7 @@ class ElectricalWorkApp:
         name=filedialog.asksaveasfilename(parent=self.root,title='Exportar dibujo SVG',
              defaultextension='.svg',filetypes=[('Gráfico vectorial SVG','*.svg')])
         if not name:return
+        self._repair_project()
         try:export_svg(self.doc,name,self.sheet_index+1,len(self.project['sheets']))
         except (OSError,ValueError) as ex:
             messagebox.showerror('Error al exportar',str(ex),parent=self.root)

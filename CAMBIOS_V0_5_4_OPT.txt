@@ -60,6 +60,17 @@ REVISIÓN 5 (pedido del usuario)
 - Zoom: la casilla muestra el porcentaje redondeado (71 en vez de 71.178)
   y al pulsarla se marca todo el número: lo que se escriba lo sustituye.
 
+REVISIÓN 6: CORRECCIÓN «Error al guardar»
+- Causa (heredada de la V0.5.3): al girar o mover un componente cuyos bornes
+  unía un mismo cable, ese cable podía quedar con longitud cero (invisible) y
+  la validación impedía guardar con «Un cable debe tener segmentos rectos y
+  ortogonales».
+- Ahora, antes de guardar o exportar (PDF, SVG, CSV), se corrigen esos cables:
+  se quitan puntos repetidos, se eliminan los de longitud cero y, si un cable
+  de 90° tuviera un tramo inclinado, se le añade un codo conservando sus
+  extremos. La barra de estado indica cuántos se corrigieron (Ctrl+Z deshace).
+- Archivos modificados: core.py, electrical_work.py.
+
 CORRECCIÓN
 - Enmarcar: dos recuadros seguidos rápidamente ya no se pierden (la segunda
   pulsación se tomaba como doble clic).

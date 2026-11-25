@@ -716,6 +716,46 @@ def _retarget_wire_endpoint(points, idx, new):
     if len(cleaned)>=2:points[:]=cleaned
 
 
+def repair_wires(doc):
+    """Corrige cables que la edición haya dejado inválidos, sin mover extremos.
+
+    - Quita vértices repetidos consecutivos.
+    - Elimina cables de longitud cero (todos sus puntos iguales): no se ven y
+      no conectan nada; aparecen al girar o mover un componente cuyos bornes
+      unía el propio cable.
+    - En cables de 90°, un tramo inclinado recibe un codo (conserva extremos).
+    Devuelve el número de cables corregidos o eliminados.
+    """
+    fixed=0
+    kept=[]
+    for wire in doc.get('wires',[]):
+        pts=[[p[0],p[1]] for p in wire.get('points',[])]
+        clean=[]
+        for p in pts:
+            if not clean or clean[-1]!=p:clean.append(p)
+        mode=wire.get('mode','orthogonal')
+        if mode not in ('straight','rectangle') and len(clean)>=2:
+            ortho=[clean[0]]
+            for b in clean[1:]:
+                a=ortho[-1]
+                if a[0]!=b[0] and a[1]!=b[1]:
+                    ortho.append([b[0],a[1]])
+                ortho.append(b)
+            clean=ortho
+        if mode=='straight' and len(clean)>2:
+            clean=[clean[0],clean[-1]]
+        if len(clean)<2:
+            fixed+=1
+            continue
+        if clean!=pts:
+            wire['points']=clean
+            fixed+=1
+        kept.append(wire)
+    if len(kept)!=len(doc.get('wires',[])):
+        doc['wires']=kept
+    return fixed
+
+
 def _update_wires_at_ports(doc,old_ports,new_ports):
     """Update original wire endpoints exactly once on move or rotation.
 

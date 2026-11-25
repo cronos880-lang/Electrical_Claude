@@ -64,6 +64,44 @@ class GeometryEquivalence(unittest.TestCase):
             self.assertEqual(junction_points(doc), junction_points_reference(doc))
 
 
+class WireRepair(unittest.TestCase):
+    """Cables que la edición deja de longitud cero no deben impedir guardar."""
+
+    def _cases(self):
+        return [
+            {'id': 'a1', 'points': [[320, 540], [320, 540], [320, 540]]},   # tras girar
+            {'id': 'a2', 'points': [[740, 220], [740, 220]]},               # tras mover grupo
+            {'id': 'a3', 'points': [[1030, 390], [1030, 390]], 'mode': 'straight'},
+            {'id': 'a4', 'points': [[100, 100], [100, 100], [200, 100], [300, 200]]},  # duplicado + oblicuo
+            {'id': 'ok', 'points': [[100, 300], [400, 300]]},
+        ]
+
+    def test_repair_allows_saving_and_keeps_valid_wires(self):
+        project = core.new_project('Reparar')
+        doc = project['sheets'][0]
+        doc['wires'] = self._cases()
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):
+                save_project(project, Path(tmp) / 'antes.ework')
+            fixed = core.repair_wires(doc)
+            self.assertEqual(fixed, 4)
+            save_project(project, Path(tmp) / 'despues.ework')
+            loaded = load_project(Path(tmp) / 'despues.ework')
+        wires = {w['id']: w['points'] for w in loaded['sheets'][0]['wires']}
+        self.assertEqual(set(wires), {'a4', 'ok'})
+        self.assertEqual(wires['ok'], [[100, 300], [400, 300]])
+        # Extremos conservados y codo insertado en el tramo oblicuo.
+        self.assertEqual(wires['a4'], [[100, 100], [200, 100], [300, 100], [300, 200]])
+
+    def test_repair_is_noop_on_valid_document(self):
+        project = core.new_project('Valido')
+        doc = project['sheets'][0]
+        doc['wires'] = [make_wire((100, 100), (300, 200)), make_straight_wire((0, 0), (40, 20))]
+        before = [dict(w) for w in doc['wires']]
+        self.assertEqual(core.repair_wires(doc), 0)
+        self.assertEqual(doc['wires'], before)
+
+
 @unittest.skipUnless(quality_render.AVAILABLE, 'Pillow no disponible')
 class RenderCache(unittest.TestCase):
     def test_symbol_bitmap_independent_of_position(self):
@@ -242,6 +280,14 @@ class PartialRedrawGUI(unittest.TestCase):
             self.assertFalse(self.app._compact_toolbar[0], 'Con 1280 lógicos no cabe la barra completa')
         finally:
             self.app._s = old
+
+    def test_save_repairs_zero_length_wire(self):
+        self.app.doc['wires'].append({'id': 'cero', 'points': [[500, 500], [500, 500]]})
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(self.app._save_to(str(Path(tmp) / 'g.ework')))
+            self.assertTrue((Path(tmp) / 'g.ework').exists())
+        self.assertNotIn('cero', [w['id'] for w in self.app.doc['wires']])
+        self.assertIn('corregidos', self.app._status_var.get())
 
     def test_static_layer_kept_and_rebuilt_on_zoom(self):
         cv = self.app.canvas
