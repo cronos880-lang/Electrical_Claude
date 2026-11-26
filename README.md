@@ -1,3 +1,14 @@
+# Electrical Work V0.5.5 — VERSIÓN OFICIAL
+
+> Aprobada por el usuario el 26-11-2026. Integra la optimización V0.5.4 OPT y sus revisiones 1–9
+> (rendimiento, modo DPI, acabado gráfico, marcado con el puntero, botón derecho, Guardar como,
+> exportación por hojas/documentación, nomenclatura de PLC y guías de alineación).
+> Paquete oficial: `entregas/Electrical_Work_V0_5_5_Oficial.zip`.
+> Base anterior intacta en la etiqueta `base-v0.5.3`. Historial técnico en `CAMBIOS_V0_5_4_OPT.txt`
+> y `docs/INFORME_OPTIMIZACION.md`.
+
+---
+
 # Electrical Work Compacto V0.5.4 OPT — versión EXPERIMENTAL optimizada
 
 > Copia de trabajo de la V0.5.3 con optimización de rendimiento y calidad de dibujo.
