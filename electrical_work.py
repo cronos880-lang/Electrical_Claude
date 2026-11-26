@@ -1,4 +1,4 @@
-"""Electrical Work Compacto 0.5.4 OPT (experimental) - editor autónomo de esquemas eléctricos (sin simulación).
+"""Electrical Work Compacto 0.5.5 (oficial) - editor autónomo de esquemas eléctricos (sin simulación).
 
 Requisitos: Python 3.9 o superior, Tkinter (incluido normalmente en Windows).
 """
@@ -105,7 +105,7 @@ class ElectricalWorkApp:
         self._status_var=tk.StringVar(value='Listo para dibujar')
         self._zoom_var=tk.StringVar(value='100')
         self._selection_var=tk.StringVar(value='Sin selección')
-        root.title('Electrical Work · COMPACTO V0.5.4 OPT')
+        root.title('Electrical Work · COMPACTO V0.5.5')
         root.configure(bg=BG)
         dpi_ui.instalar(root)
         self._s=dpi_ui.ESCALA
@@ -585,7 +585,7 @@ class ElectricalWorkApp:
         titlebox=tk.Frame(brand,bg=NAVY)
         titlebox.pack(side='left',padx=10,pady=7)
         tk.Label(titlebox,text='ELECTRICAL WORK',font=self._semi(12),fg='#ffffff',bg=NAVY).pack(anchor='w')
-        self._text(titlebox,'EDITOR DE ESQUEMAS · COMPACTO 70 % · V0.5.4 OPT',8,'normal','#9db2c5').pack(anchor='w')
+        self._text(titlebox,'EDITOR DE ESQUEMAS · COMPACTO 70 % · V0.5.5',8,'normal','#9db2c5').pack(anchor='w')
         actions=tk.Frame(top,bg=NAVY)
         actions.pack(side='right',padx=(0,12),pady=9)
         for name,command,bg in [
@@ -2226,7 +2226,7 @@ class ElectricalWorkApp:
 
     def _update_caption(self):
         name=os.path.basename(self.filepath) if self.filepath else 'Sin guardar'
-        self.root.title(f'Electrical Work · {name}{" *" if self.dirty else ""} · COMPACTO V0.5.4 OPT')
+        self.root.title(f'Electrical Work · {name}{" *" if self.dirty else ""} · COMPACTO V0.5.5')
 
     def return_to_pointer(self,event=None):
         """Esc siempre desactiva la herramienta de dibujo actual."""

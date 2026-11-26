@@ -40,7 +40,7 @@ símbolos y etiquetas se rasterizaban con Pillow a 4× y se guardaban en una cac
 
 - Cables dibujados por Tk (sin suavizado, grosor fraccionario redondeado por el sistema) y
   símbolos dibujados por Pillow (suavizados, otro grosor): **en las uniones cable‑borne había
-  cambios de grosor y pequeños huecos** (visible en `comparativa_grafica_V0_5_4_OPT.png`).
+  cambios de grosor y pequeños huecos** (visible en `docs/vistas_previas/comparativa_grafica_V0_5_4_OPT.png`).
 - Grosores distintos según el elemento (cables 1,65; símbolos 1,55; marco 1,4) y coordenadas en
   medio píxel: líneas horizontales/verticales borrosas (dos píxeles grises en vez de uno nítido).
 - Texto rasterizado a 4× y reducido con LANCZOS: letras algo difusas y con halo.
@@ -163,7 +163,7 @@ Total: 23 pruebas correctas.
   de interfaz en píxeles (márgenes, bordes, alturas, iconos) se multiplican por el factor de escala,
   de modo que la interfaz conserva su tamaño visual. Los textos del plano se fijan en píxeles para que
   no crezcan dos veces. Tolerancias del ratón escaladas. Desactivable con `SIN_DPI.txt`.
-  Comparación simulada en `docs/vista_previa_modo_DPI.png`. 23 pruebas correctas a 96 y 144 ppp.
+  Comparación simulada en `docs/vistas_previas/vista_previa_modo_DPI.png`. 23 pruebas correctas a 96 y 144 ppp.
 - Marco con zonas 1–8 (`page_layout.py`), compartido por pantalla, PDF y SVG.
 - Iconos de herramientas suavizados (`quality_render.IconPainter`), también escalados en modo DPI.
 - Cabecera y barra de edición en Segoe UI Semibold.
@@ -171,7 +171,7 @@ Total: 23 pruebas correctas.
 ## 6. Acabado estilo AutoCAD Electrical
 
 Referencia elegida por el usuario: AutoCAD Electrical. Se prepararon cuatro opciones con vista previa
-(`docs/opciones_acabado/`). **Aprobada y activada: A, rejilla con puntos principales** cada 100
+(`docs/vistas_previas/opciones_acabado/`). **Aprobada y activada: A, rejilla con puntos principales** cada 100
 unidades. B (resaltado al pasar el ratón), C (pinzamientos) y D (cruceta) quedan desactivadas; se
 pueden probar con la variable de entorno `EW_ESTILO` (por ejemplo `EW_ESTILO=rejilla,pinzas`).
 

@@ -1,89 +1,43 @@
-# Electrical Work V0.5.5 — VERSIÓN OFICIAL
+# Electrical Work Compacto V0.5.5 — versión oficial
 
-> Aprobada por el usuario el 26-11-2026. Integra la optimización V0.5.4 OPT y sus revisiones 1–9
-> (rendimiento, modo DPI, acabado gráfico, marcado con el puntero, botón derecho, Guardar como,
-> exportación por hojas/documentación, nomenclatura de PLC y guías de alineación).
-> Paquete oficial: `entregas/Electrical_Work_V0_5_5_Oficial.zip`.
-> Base anterior intacta en la etiqueta `base-v0.5.3`. Historial técnico en `CAMBIOS_V0_5_4_OPT.txt`
-> y `docs/INFORME_OPTIMIZACION.md`.
+Editor de esquemas eléctricos para Windows (Python + Tkinter), parte de *Suite de Programas*.
+Dibuja esquemas; no realiza simulación eléctrica ni certificación de seguridad.
 
----
-
-# Electrical Work Compacto V0.5.4 OPT — versión EXPERIMENTAL optimizada
-
-> Copia de trabajo de la V0.5.3 con optimización de rendimiento y calidad de dibujo.
-> **No es oficial** hasta su aprobación. La base intacta está en la etiqueta `base-v0.5.3`.
-> Lee `LEEME_PRIMERO_V0_5_4_OPT.txt`, `CAMBIOS_V0_5_4_OPT.txt` y `docs/INFORME_OPTIMIZACION.md`.
-
----
-
-# Electrical Work Compacto V0.5 — revisión gráfica de prueba
-
-**Rama:** `desarrollo-compacto`  
-**Estado:** V0.5 desarrollada para evaluación. V0.4 se conserva como punto de retorno. Solo el usuario aprueba una versión oficial.
-
-Esta rama sirve para perfeccionar la presentación y las proporciones de Electrical Work **sin alterar la versión V0.38.3**, que se conserva en la rama `main` como referencia funcional para el trabajo diario.
-
-> No sustituir ni fusionar automáticamente esta rama con `main`. Cualquier cambio de versión de trabajo requiere aprobación expresa.
-
-## Qué incorpora Compacto V0.4
-
-- Escala compacta real del **70 %** y rejilla fina.
-- Ajustes de proporciones del relé térmico tripolar.
-- Revisión gráfica de seis sensores inductivos, capacitivos y magnéticos (NA y NC).
-- Conservación de los puntos de conexión y del cableado de los símbolos.
-- Edición de referencias, esquemas de varias hojas y salida PDF/SVG vectorial.
-- Módulo `quality_render.py` para el tratamiento gráfico.
-
-Los cambios concretos y las comprobaciones documentadas están en `CAMBIOS_V0_4.txt`, `COMPROBACIONES_V0_4.txt` y `LEEME.txt`.
+**Estado:** V0.5.5 oficial, aprobada por el usuario el 26-11-2026.
+**Paquete de instalación:** [`entregas/Electrical_Work_V0_5_5_Oficial.zip`](entregas/Electrical_Work_V0_5_5_Oficial.zip)
 
 ## Ejecutar en Windows
 
-1. Descarga esta rama y descomprímela en una carpeta independiente de V0.38.3.
-2. Ten instalado Python 3 con Tkinter.
-3. Ejecuta `INICIAR_WINDOWS.bat`.
-4. Para consultar errores de arranque, utiliza `INICIAR_CON_CONSOLA.bat`.
+1. Descomprime el paquete en una carpeta nueva.
+2. Requiere Python 3.9 o superior con Tkinter (instalación oficial de python.org). Pillow es recomendado
+   (suavizado de dibujo); el lanzador ofrece instalarlo.
+3. Ejecuta `INICIAR_WINDOWS.bat` (la Suite de Programas lanza este mismo archivo).
+4. Para diagnosticar un fallo: `INICIAR_CON_CONSOLA.bat`.
 
-Pillow puede utilizarse para el suavizado gráfico; el lanzador permite continuar con el renderizado clásico si no se instala. Esta entrega es **código ejecutable mediante Python**, no un instalador EXE independiente.
+## Contenido
 
-## Archivos principales
+| Archivo | Función |
+|---|---|
+| `electrical_work.py` | Interfaz, eventos y motor de dibujo en pantalla |
+| `core.py` | Modelo, geometría, cables, guardado y SVG |
+| `symbology.py` | Símbolos vectoriales |
+| `quality_render.py` | Dibujo suavizado (Pillow), iconos |
+| `dpi_ui.py` | Nitidez con escalado de Windows (modo DPI) |
+| `documentation.py`, `page_layout.py`, `pdf_export.py` | Documentación, marco de hoja, PDF |
+| `tests/` | Pruebas automáticas y banco de medidas (`python -m unittest discover -s tests`) |
+| `LEEME_PRIMERO_V0_5_5.txt`, `CAMBIOS_V0_5_5.txt` | Instrucciones y cambios |
+| `docs/INFORME_OPTIMIZACION.md` | Auditoría, plan, mediciones y decisiones |
+| `docs/vistas_previas/` | Comparativas y vistas previas aprobadas |
+| `docs/historial/` | Documentación de versiones anteriores |
+| `docs/SIGUIENTE_TAREA_PORTADA_PDF.md` | Notas para la próxima tarea |
 
-- `electrical_work.py`: interfaz del editor.
-- `core.py`, `symbology.py`: lógica y simbología.
-- `documentation.py`, `page_layout.py`, `pdf_export.py`: documentación, hojas y PDF.
-- `quality_render.py`: mejora de presentación gráfica.
-- `INICIAR_WINDOWS.bat`, `INICIAR_CON_CONSOLA.bat`: lanzadores Windows.
-- `COMPARATIVA_V0_4.png`, `PREVIA_EDITOR_V0_4.png`: imágenes ilustrativas del desarrollo.
+## Versiones
 
-## Proyectos y privacidad
+- `v0.5.5-oficial` (etiqueta): esta versión.
+- `base-v0.5.3` (etiqueta): copia intacta de la V0.5.3 sobre la que se trabajó.
+- El repositorio original `Electrical-Work` no se ha modificado.
 
-Este repositorio no incluye proyectos personales `.ework` ni sus exportaciones. Las referencias a archivos de ejemplo en `LEEME.txt` corresponden al paquete de pruebas original: **esos ejemplos no se distribuyen en este repositorio**.
+## Protección de datos
 
-Conserva tus proyectos y copias de seguridad por separado. Revisa las futuras subidas a GitHub, ya que `.gitignore` no bloquea archivos añadidos manualmente desde la web.
-
-## Compatibilidad y precauciones
-
-La documentación de V0.4 indica compatibilidad de apertura con proyectos de V0.38.3 y versiones Compacto anteriores. Guarda una copia de cualquier proyecto antes de editarlo con esta rama. Quedan pendientes las pruebas finales en Windows y la comprobación física de impresión.
-
-**Electrical Work es un editor de esquemas:** no simula ni certifica la seguridad de una instalación eléctrica.
-
-
-## Revisión gráfica posterior a Compacto V0.4 (desarrollo, sin nueva versión)
-
-Cambios en curso sobre \`desarrollo-compacto\`, **no publicados como nueva versión**:
-
-- Proporciones y separación de mecanismos en protecciones de 2, 3 y 4 polos, diferenciales y guardamotor.
-- Barrera fotoeléctrica más legible; contactos NA y NC internos de sensores diferenciados.
-- Antialiasing a 4× con terminaciones de trazos redondeadas y rellenos opacos coherentes con PDF/SVG; Pillow continúa siendo opcional.
-- No se cambian los puntos eléctricos de conexión, el formato de proyecto ni la interfaz aprobada.
-- Regresión repetible: \`python -m unittest discover -s tests -v\` (63 tipos, 4 orientaciones, exportación y guardado). El resultado en Windows e impresión física quedan pendientes.
-
-**Evaluación del ecosistema ArtCraft:** se ha revisado [VectorCraft](https://github.com/storytold/vectorcraft) y su [arquitectura de renderizado](https://github.com/storytold/vectorcraft/blob/main/docs/architecture.md).
-VectorCraft es MIT/Apache-2.0, pero las marcas y los recursos de terceros tienen condiciones propias. Se han adoptado **criterios técnicos de calidad vectorial**, sin copiar código ni integrar motores/librerías nuevos. Su motor Rust no forma parte de esta rama. Tampoco se ha integrado Godot ni REA: no se confirmó acceso operativo a REA y sustituir el motor requiere una decisión técnica expresa.
-
-**Seguridad:** V0.4 sigue siendo la versión entregada como referencia en esta línea; \`main\` conserva V0.38.3. No se han generado releases o etiquetas nuevas. La validación automática no equivale a aprobación del usuario.
-
-
-## Entrega V0.5 de prueba
-
-La entrega completa se encuentra en `entregas/Electrical_Work_Compacto_V0_5_Mejora_Grafica_COMPLETA.zip` e incluye el programa y las pruebas de regresión. Conservar la V0.4 y los proyectos originales hasta su validación en Windows.
+El repositorio no incluye proyectos de usuario ni datos personales. Los `.ework`, PDF y copias de
+seguridad están excluidos por `.gitignore`; aun así, revisa siempre la lista antes de subir algo a mano.

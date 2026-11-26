@@ -1,5 +1,10 @@
-CAMBIOS V0.5.4 OPT (EXPERIMENTAL) — sobre Compacto V0.5.3
-==========================================================
+CAMBIOS V0.5.5 OFICIAL — sobre Compacto V0.5.3
+===============================================
+Versión oficial aprobada por el usuario el 26-11-2026. Integra la línea
+experimental V0.5.4 OPT y sus revisiones 1 a 9 (detalle a continuación).
+Única diferencia con el paquete de la revisión 9: la ventana y la cabecera
+muestran «V0.5.5».
+
 Objetivo: fluidez y calidad de dibujo. Misma interfaz, mismas herramientas.
 
 RENDIMIENTO (esquema de 154 símbolos, mediana por paso)

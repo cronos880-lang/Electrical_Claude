@@ -1,0 +1,35 @@
+ELECTRICAL WORK COMPACTO V0.5.5 — VERSIÓN OFICIAL
+=================================================
+Aprobada por el usuario. Sustituye como versión de trabajo a la V0.5.3.
+
+INSTALACIÓN
+1. Descomprime Electrical_Work_V0_5_5_Oficial.zip en una carpeta nueva.
+2. Ejecuta INICIAR_WINDOWS.bat (Python 3.9+ con Tkinter; Pillow recomendado).
+3. Comprueba que el título de la ventana indica «COMPACTO V0.5.5».
+Conserva la carpeta de la versión anterior hasta comprobar que todo va bien.
+Los proyectos .ework se abren igual en ambas versiones (sin cambio de formato).
+
+MANEJO DEL RATÓN
+- Botón izquierdo sobre un objeto: seleccionar y mover.
+- Botón izquierdo en vacío y arrastrar: marcar varios objetos.
+- Botón derecho y arrastrar: desplazar la hoja con zoom.
+- Botón derecho (clic) con objetos marcados: borrarlos. Ctrl+Z deshace.
+- Rueda: zoom. Casilla de zoom: al pulsarla se marca el número.
+
+GUARDAR Y EXPORTAR
+- Guardar (Ctrl+S): en el archivo abierto. Guardar como (Ctrl+Mayús+S).
+- Exportar PDF: una hoja (a elegir), todas las hojas o solo la documentación.
+
+DIBUJO
+- Guías de alineación discontinuas al dibujar líneas y al colocar símbolos.
+- PLC con nombres de entradas/salidas por fabricante (I/Q, X/Y...).
+
+NITIDEZ (MODO DPI)
+- Con escalado de Windows (125 %, 150 %) la ventana se ve nítida.
+- Para volver al modo anterior: crea un archivo vacío SIN_DPI.txt junto al
+  programa y vuelve a abrirlo.
+
+MEDIR RENDIMIENTO
+- MEDIR_RENDIMIENTO.bat usa esquemas sintéticos (no tus proyectos).
+
+Cambios: CAMBIOS_V0_5_5.txt · Informe técnico: docs/INFORME_OPTIMIZACION.md
